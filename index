@@ -589,7 +589,60 @@ function renderConfigPanel(){
         <div style="color:#475569;font-size:9px;margin-top:5px">SS = Z × MAD (sans √LT)</div>
       </div>
     </div>
-  </div>`;
+
+    <div style="margin-top:14px;border-top:1px solid #1e3a5f;padding-top:14px">
+      <div style="color:#94a3b8;font-size:10px;font-weight:700;text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:6px">
+        <i class="ti ti-brand-google" style="color:#00C9B1;font-size:13px"></i>
+        Connexion Google Sheets (BDD)
+      </div>
+      ${GSConnector.isConfigured()
+        ? `<div style="background:#0f2e1a;border:0.5px solid #10B981;border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:10px">
+            <i class="ti ti-circle-check" style="color:#10B981;font-size:16px"></i>
+            <div>
+              <div style="color:#10B981;font-size:11px;font-weight:700">Google Sheets connecté</div>
+              <div style="color:#64748b;font-size:10px;word-break:break-all;margin-top:2px">${APPS_SCRIPT_URL.slice(0,60)}…</div>
+            </div>
+            <div style="margin-left:auto;display:flex;gap:6px">
+              <button onclick="GSConnector.loadAll()" style="background:#1e3a5f;border:none;color:#94a3b8;border-radius:5px;padding:4px 10px;font-size:10px;cursor:pointer;font-weight:600">
+                <i class="ti ti-refresh" style="margin-right:3px"></i>Sync
+              </button>
+              <button onclick="APPS_SCRIPT_URL='';ss({})" style="background:#1e3a5f;border:none;color:#EF4444;border-radius:5px;padding:4px 10px;font-size:10px;cursor:pointer;font-weight:600">
+                Déconnecter
+              </button>
+            </div>
+          </div>`
+        : `<div>
+            <div style="color:#64748b;font-size:10px;margin-bottom:6px">
+              Collez l'URL de déploiement de votre Apps Script pour synchroniser les données avec Google Sheets.
+            </div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <input id="gsUrlInput" type="text"
+                placeholder="https://script.google.com/macros/s/VOTRE_ID/exec"
+                style="flex:1;background:#0B1F3A;border:1px solid #334155;color:#fff;border-radius:6px;padding:6px 10px;font-size:11px;outline:none"
+                onkeydown="if(event.key==='Enter'){connectGS()}">
+              <button onclick="connectGS()"
+                style="background:#00C9B1;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">
+                <i class="ti ti-plug-connected" style="margin-right:4px"></i>Connecter
+              </button>
+            </div>
+            <div style="margin-top:6px;display:flex;gap:8px;align-items:center">
+              <div style="background:#1e3a5f;border-radius:6px;padding:5px 10px;font-size:9px;color:#64748b;flex:1">
+                <span style="color:#94a3b8;font-weight:700">Installation :</span>
+                Google Sheet → Extensions → Apps Script → Coller OPTIPLAN_AppScript.gs → 
+                Déployer → Application Web → Copier l'URL ici
+              </div>
+            </div>
+          </div>`}
+    </div>
+  </div>\`;
+}
+
+function connectGS() {
+  const input = document.getElementById("gsUrlInput");
+  if (!input || !input.value.trim()) return;
+  APPS_SCRIPT_URL = input.value.trim();
+  ss({});
+  GSConnector.loadAll();
 }
 
 function renderImportPanel(){
@@ -1221,7 +1274,7 @@ function doImport(){
 
 // ── GOOGLE SHEETS CONNECTOR ──────────────────────────────────
 // Remplacer cette URL par l'URL de déploiement de votre Apps Script
-let APPS_SCRIPT_URL = "";
+let APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwofZE_NaRemL-D14TPsT5f1pj96Sk9JJqGYZXi6WbxGYo8X0yzUIG9AC9uKXSBeXH7Lw/exec";
 
 const GSConnector = {
   isConfigured: () => APPS_SCRIPT_URL !== "",
