@@ -49,6 +49,26 @@ td{padding:7px 8px;border-top:0.5px solid #E2E8F0}
 <script>
 const NAV={navy:"#0B1F3A",blue:"#1A4A8A",accent:"#00A8E8",teal:"#00C9B1",warn:"#F59E0B",danger:"#EF4444",ok:"#10B981"};
 
+// Table Z complète APICS — Taux de service vs Facteur Z
+const Z_TABLE={
+  50:0.00, 55:0.13, 60:0.25, 65:0.39, 70:0.52, 75:0.67,
+  80:0.84, 85:1.04, 90:1.28, 91:1.34, 92:1.41, 93:1.48,
+  94:1.55, 95:1.65, 96:1.75, 97:1.88, 98:2.05, 99:2.33,
+  99.5:2.58, 99.9:3.09
+};
+
+function updateSSSimul(itemId, sl){
+  // Mise à jour du taux de service dans la config client
+  const it=ITEMS_DEF.find(i=>i.id===itemId);
+  if(!it)return;
+  const nc=JSON.parse(JSON.stringify(S.clientCfgs));
+  nc[it.cli].service=sl;
+  ss({clientCfgs:nc});
+}
+
+function getZ(sl){return Z_TABLE[sl]||Z_TABLE[Math.round(sl)]||1.65;}
+function calcSS(mad,serviceLevel){return Math.round(getZ(serviceLevel)*mad);}
+
 // ── i18n ────────────────────────────────────────────────────
 const TRANSLATIONS = {
   fr: {
@@ -286,13 +306,14 @@ const CLIENTS_DEF=[
 ];
 
 const ITEMS_DEF=[
-  {id:"REF-001",label:"Support Moteur Avant",cli:"RNT",bucket:"week",lt:3,famille:"Structure"},
-  {id:"REF-002",label:"Bracket Suspension AV",cli:"RNT",bucket:"week",lt:2,famille:"Structure"},
-  {id:"REF-003",label:"Bras de Liaison Arrière",cli:"STL",bucket:"week",lt:4,famille:"Liaison"},
-  {id:"REF-004",label:"Platine Fixation Amort.",cli:"STL",bucket:"day",lt:5,famille:"Fixation"},
-  {id:"REF-005",label:"Support Boîte Vitesse",cli:"VLO",bucket:"week",lt:3,famille:"Transmission"},
-  {id:"REF-006",label:"Bride Echappement",cli:"VLO",bucket:"week",lt:2,famille:"Echappement"},
-  {id:"REF-007",label:"Crochet Remorquage AV",cli:"RNT",bucket:"week",lt:3,famille:"Structure"},
+  {id:"7700432156",label:"Support Berceau Moteur AV",    cli:"RNT",bucket:"week",lt:3,famille:"Châssis",pn:"RNT-CH-4412",uom:"PCS"},
+  {id:"7700518823",label:"Platine Fixation Amortisseur", cli:"RNT",bucket:"week",lt:2,famille:"Suspension",pn:"RNT-SU-0821",uom:"PCS"},
+  {id:"7700641047",label:"Crochet Remorquage Avant",     cli:"RNT",bucket:"week",lt:3,famille:"Châssis",pn:"RNT-CH-6610",uom:"PCS"},
+  {id:"9807345210",label:"Bras de Liaison Arrière G/D",  cli:"STL",bucket:"week",lt:4,famille:"Liaison",pn:"PSA-LI-3421",uom:"PCS"},
+  {id:"9807412088",label:"Bracket Boîte Vitesses",       cli:"STL",bucket:"day", lt:5,famille:"Transmission",pn:"PSA-TR-4120",uom:"PCS"},
+  {id:"9807523661",label:"Support Train Arrière",        cli:"STL",bucket:"week",lt:4,famille:"Liaison",pn:"PSA-LI-5236",uom:"PCS"},
+  {id:"VL8834210", label:"Bride Collecteur Echappement", cli:"VLO",bucket:"week",lt:2,famille:"Thermique",pn:"VAL-TH-8834",uom:"PCS"},
+  {id:"VL8901447", label:"Support Refroidisseur Huile",  cli:"VLO",bucket:"week",lt:3,famille:"Thermique",pn:"VAL-TH-9014",uom:"PCS"},
 ];
 
 const DEFAULT_CFG={ts:{frozen:2,slushy:3,liquid:4},service:95,biasWarn:10,biasDanger:25};
@@ -308,12 +329,28 @@ const WEEKS=["S1","S2","S3","S4","S5","S6","S7","S8","S9","S10","S11","S12"];
 function getZone(w){const i=parseInt(w.replace("S",""));return i<=2?"frozen":i<=5?"slushy":"liquid";}
 
 function rng(s){let x=Math.sin(s)*10000;return x-Math.floor(x);}
-function buildEDI(seed,reception){
-  const base=WEEKS.map((_,i)=>Math.round(80+rng(seed+i)*280));
+// Volumes de base par famille — crédibles automotive Tier2/Tier3
+const BASE_VOL={
+  "Châssis":    [820,840,780,860,810,790,830,850,800,820,840,810],
+  "Suspension": [640,620,650,630,660,640,620,650,630,640,660,630],
+  "Liaison":    [520,540,510,530,550,520,540,510,530,520,540,510],
+  "Transmission":[1200,1150,1250,1180,1220,1190,1230,1200,1180,1210,1240,1190],
+  "Thermique":  [380,390,370,400,385,375,395,380,390,370,400,385],
+};
+function buildEDI(seed,reception,famille){
+  const baseVols=BASE_VOL[famille]||BASE_VOL["Châssis"];
   const qtys={};
   WEEKS.forEach((w,i)=>{
-    const drift=reception>2?(rng(seed+reception*7+i)>0.55?1.35+rng(seed+reception+i)*0.7:0.72+rng(seed+reception+i)*0.28):1;
-    qtys[w]=Math.round(base[i]*drift);
+    // Dérive progressive: sur-prog en frozen après R3, sous-prog en liquid
+    let drift=1.0;
+    if(reception>3){
+      const zone=getZone(w);
+      if(zone==="frozen") drift=1.0+(reception-3)*0.08+rng(seed+reception+i)*0.05;
+      else if(zone==="slushy") drift=1.0+(reception-3)*0.03;
+      else drift=1.0-(reception-3)*0.04+rng(seed+i)*0.03;
+    }
+    const noise=0.94+rng(seed+reception*11+i)*0.12;
+    qtys[w]=Math.max(0,Math.round(baseVols[i]*drift*noise));
   });
   const d=new Date(2024,reception-1,1);
   return{id:`R${String(reception).padStart(2,"0")}`,date:d.toLocaleDateString("fr-FR"),dateObj:d,qtys};
@@ -321,14 +358,29 @@ function buildEDI(seed,reception){
 
 function buildAllEDI(){
   const h={};
-  ITEMS_DEF.forEach((it,idx)=>{h[it.id]=[];for(let r=1;r<=6;r++)h[it.id].push(buildEDI((idx+1)*17,r));});
+  ITEMS_DEF.forEach((it,idx)=>{
+    h[it.id]=[];
+    for(let r=1;r<=6;r++) h[it.id].push(buildEDI((idx+1)*17,r,it.famille));
+  });
   return h;
 }
 
 function makeItemMaster(){
+  const ss_vals={
+    "7700432156":{ss:450, prix:12.50},
+    "7700518823":{ss:280, prix:8.90},
+    "7700641047":{ss:320, prix:6.20},
+    "9807345210":{ss:380, prix:18.40},
+    "9807412088":{ss:1200,prix:4.10},
+    "9807523661":{ss:290, prix:15.60},
+    "VL8834210": {ss:180, prix:9.80},
+    "VL8901447": {ss:240, prix:11.20},
+  };
   const m={};
-  const ss_vals={"REF-001":120,"REF-002":80,"REF-003":200,"REF-004":350,"REF-005":90,"REF-006":110,"REF-007":95};
-  ITEMS_DEF.forEach(it=>{m[it.id]={ss_actuel:ss_vals[it.id]||100,uom:"PCS"};});
+  ITEMS_DEF.forEach(it=>{
+    const d=ss_vals[it.id]||{ss:150,prix:10};
+    m[it.id]={ss_actuel:d.ss,uom:it.uom||"PCS",prix_unitaire:d.prix};
+  });
   return m;
 }
 
@@ -875,31 +927,111 @@ function renderItemMetrics(m,cfg){
 }
 
 function renderItemCharts(recs){
-  return`<div class="card">
-    <div style="font-size:12px;font-weight:700;margin-bottom:3px">Tableau comparatif des réceptions EDI</div>
-    <div style="font-size:10px;color:#64748B;margin-bottom:12px">${recs.length} réceptions · Δ = dernière vs précédente</div>
-    <div style="overflow-x:auto">
-    <table>
-      <thead><tr>
-        <th>Période</th>
-        ${recs.map((r,i)=>`<th style="color:${i===recs.length-1?NAV.accent:"#64748B"}">${r.id}${i===recs.length-1?" (dernière)":""}</th>`).join("")}
-        <th style="color:${NAV.accent}">Δ</th><th>Zone</th>
-      </tr></thead>
-      <tbody>
-        ${WEEKS.map(w=>{
-          const last=recs[recs.length-1]?.qtys[w]||0;
-          const prev=recs[recs.length-2]?.qtys[w]||0;
-          const delta=last-prev;
-          const zone=getZone(w);
-          return`<tr>
-            <td style="font-weight:600;font-size:10px">${w}</td>
-            ${recs.map((r,i)=>`<td style="text-align:right;font-family:monospace;font-size:10px;color:${i===recs.length-1?"#1E293B":"#64748B"};font-weight:${i===recs.length-1?700:400}">${r.qtys[w]}</td>`).join("")}
-            <td style="text-align:right;font-weight:700;font-family:monospace;font-size:11px;color:${delta>0?NAV.danger:delta<0?NAV.ok:"#64748B"}">${delta>0?"+":""}${delta}</td>
-            <td><span class="pill" style="background:${zone==="frozen"?NAV.accent:zone==="slushy"?NAV.warn:NAV.teal}22;color:${zone==="frozen"?NAV.accent:zone==="slushy"?NAV.warn:NAV.teal};font-size:9px">${zone}</span></td>
-          </tr>`;
-        }).join("")}
-      </tbody>
-    </table>
+  if(recs.length<2)return'<div class="card" style="text-align:center;color:var(--color-text-secondary);padding:30px">Minimum 2 réceptions requises</div>';
+  const last=recs[recs.length-1];
+  const prev=recs[recs.length-2];
+  const W=WEEKS;
+  const maxQ=Math.max(...recs.flatMap(r=>W.map(w=>r.qtys[w]||0)),1);
+  const svgW=620, svgH=200, padL=44, padR=12, padT=16, padB=28;
+  const pw=svgW-padL-padR, ph=svgH-padT-padB;
+  const COLORS_LINE=["#94A3B8","#64748B","#60A5FA","#00A8E8","#00C9B1","#1A4A8A"];
+  function px(wi){return padL+wi/(W.length-1)*pw;}
+  function py(v){return padT+ph-(v/maxQ)*ph;}
+  // Zone backgrounds
+  const xSlushy=px(2), xLiquid=px(5);
+  // Grid lines
+  const gridLines=[0,0.25,0.5,0.75,1].map(p=>{
+    const y=padT+ph*(1-p);
+    const val=Math.round(maxQ*p);
+    return`<line x1="${padL}" x2="${svgW-padR}" y1="${y}" y2="${y}" stroke="var(--color-border-tertiary)" stroke-width="0.5"/>
+    <text x="${padL-4}" y="${y+4}" text-anchor="end" font-size="9" fill="var(--color-text-secondary)">${val}</text>`;
+  }).join('');
+  // Week labels
+  const wLabels=W.map((w,i)=>`<text x="${px(i)}" y="${svgH-6}" text-anchor="middle" font-size="9" fill="var(--color-text-secondary)">${w}</text>`).join('');
+  // Lines per reception
+  const lines_svg=recs.map((rec,ri)=>{
+    const pts=W.map((w,wi)=>`${px(wi)},${py(rec.qtys[w]||0)}`).join(' ');
+    const isLast=ri===recs.length-1;
+    return`<polyline points="${pts}" fill="none" stroke="${COLORS_LINE[ri%COLORS_LINE.length]}" stroke-width="${isLast?2.5:1}" stroke-opacity="${isLast?1:0.45}" stroke-linejoin="round"/>`;
+  }).join('');
+  // Delta bars (dernière vs précédente)
+  const barW2=Math.max(4, pw/W.length/2-2);
+  const zero=py(0);
+  const deltaBars=W.map((w,wi)=>{
+    const d=(last.qtys[w]||0)-(prev.qtys[w]||0);
+    const barH=Math.abs(d)/maxQ*ph;
+    const col=d>0?'#EF4444':'#10B981';
+    const barY=d>0?zero-barH:zero;
+    return`<rect x="${px(wi)-barW2/2}" y="${barY}" width="${barW2}" height="${barH}" fill="${col}" opacity="0.7" rx="1"/>`;
+  }).join('');
+
+  // MAD calculation display per zone
+  const zones={frozen:WEEKS.slice(0,2),slushy:WEEKS.slice(2,5),liquid:WEEKS.slice(5)};
+  const madCards=Object.entries(zones).map(([z,wks])=>{
+    const errors=wks.map(w=>Math.abs((last.qtys[w]||0)-(prev.qtys[w]||0)));
+    const mad=Math.round(errors.reduce((a,b)=>a+b,0)/errors.length);
+    const meanDemand=Math.round(wks.map(w=>(last.qtys[w]||0)).reduce((a,b)=>a+b,0)/wks.length);
+    const cv=meanDemand>0?(mad/meanDemand*100).toFixed(1):0;
+    const zCol=z==="frozen"?NAV.accent:z==="slushy"?NAV.warn:NAV.teal;
+    const zLabel=z==="frozen"?"Figé":z==="slushy"?"Semi-figé":"Flexible";
+    return`<div style="flex:1;background:var(--color-background-secondary);border-radius:8px;padding:10px 12px;border-left:3px solid ${zCol}">
+      <div style="font-size:10px;font-weight:700;color:${zCol};margin-bottom:6px;text-transform:uppercase">${zLabel}</div>
+      <div style="display:flex;gap:10px">
+        <div style="text-align:center">
+          <div style="font-size:9px;color:var(--color-text-secondary)">MAD</div>
+          <div style="font-size:18px;font-weight:700;color:var(--color-text-primary)">${mad}</div>
+          <div style="font-size:9px;color:var(--color-text-secondary)">unités</div>
+        </div>
+        <div style="text-align:center;border-left:0.5px solid var(--color-border-tertiary);padding-left:10px">
+          <div style="font-size:9px;color:var(--color-text-secondary)">Demande moy.</div>
+          <div style="font-size:18px;font-weight:700;color:var(--color-text-primary)">${meanDemand}</div>
+          <div style="font-size:9px;color:var(--color-text-secondary)">unités</div>
+        </div>
+        <div style="text-align:center;border-left:0.5px solid var(--color-border-tertiary);padding-left:10px">
+          <div style="font-size:9px;color:var(--color-text-secondary)">CV (variab.)</div>
+          <div style="font-size:18px;font-weight:700;color:${cv>30?NAV.danger:cv>15?NAV.warn:NAV.ok}">${cv}%</div>
+          <div style="font-size:9px;color:var(--color-text-secondary)">MAD/Moy</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Legend
+  const legend=recs.map((r,i)=>`<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:var(--color-text-secondary);margin-right:10px">
+    <span style="display:inline-block;width:16px;height:${i===recs.length-1?3:1.5}px;background:${COLORS_LINE[i%COLORS_LINE.length]};border-radius:2px"></span>${r.id} ${r.date}
+  </span>`).join('');
+
+  return`<div style="display:flex;flex-direction:column;gap:12px">
+    <div class="card">
+      <div style="font-size:12px;font-weight:700;margin-bottom:3px">Évolution des programmes EDI reçus</div>
+      <div style="font-size:10px;color:var(--color-text-secondary);margin-bottom:8px">${recs.length} réceptions · trait épais = dernière réception</div>
+      <div style="margin-bottom:8px;flex-wrap:wrap">${legend}</div>
+      <svg viewBox="0 0 ${svgW} ${svgH}" style="width:100%;height:auto;display:block">
+        <rect x="${padL}" y="${padT}" width="${xSlushy-padL}" height="${ph}" fill="#00A8E808" rx="0"/>
+        <rect x="${xSlushy}" y="${padT}" width="${xLiquid-xSlushy}" height="${ph}" fill="#F59E0B08" rx="0"/>
+        <rect x="${xLiquid}" y="${padT}" width="${svgW-padR-xLiquid}" height="${ph}" fill="#00C9B108" rx="0"/>
+        <text x="${padL+4}" y="${padT+10}" font-size="8" fill="#00A8E8" opacity="0.7">Figé</text>
+        <text x="${xSlushy+4}" y="${padT+10}" font-size="8" fill="#F59E0B" opacity="0.7">Semi-figé</text>
+        <text x="${xLiquid+4}" y="${padT+10}" font-size="8" fill="#00C9B1" opacity="0.7">Flexible</text>
+        ${gridLines}${lines_svg}${wLabels}
+      </svg>
+    </div>
+    <div class="card">
+      <div style="font-size:12px;font-weight:700;margin-bottom:3px">Δ Dérive — Dernière vs précédente réception</div>
+      <div style="font-size:10px;color:var(--color-text-secondary);margin-bottom:8px">Rouge = augmentation · Vert = diminution</div>
+      <svg viewBox="0 0 ${svgW} 120" style="width:100%;height:auto;display:block">
+        <line x1="${padL}" x2="${svgW-padR}" y1="60" y2="60" stroke="var(--color-text-secondary)" stroke-width="1"/>
+        ${deltaBars}
+        ${W.map((w,wi)=>`<text x="${px(wi)}" y="114" text-anchor="middle" font-size="9" fill="var(--color-text-secondary)">${w}</text>`).join('')}
+      </svg>
+    </div>
+    <div class="card">
+      <div style="font-size:12px;font-weight:700;margin-bottom:10px">MAD par zone — Base calcul Safety Stock</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">${madCards}</div>
+      <div style="margin-top:10px;padding:8px;background:var(--color-background-secondary);border-radius:8px;font-size:10px;color:var(--color-text-secondary)">
+        <strong style="color:var(--color-text-primary)">MAD = Σ|Programme_n - Programme_n-1| / nb_périodes</strong> · 
+        CV = MAD / Demande moyenne × 100 · CV &gt; 30% = demande aléatoire
+      </div>
     </div>
   </div>`;
 }
@@ -929,7 +1061,7 @@ function renderMasterFile(it,ss,ssAct,gap,p,avgMad,cfg){
     </div>
     <div style="display:flex;flex-direction:column;gap:10px">
       <div class="card">
-        <div style="font-size:12px;font-weight:700;margin-bottom:10px"><i class="ti ti-package" style="margin-right:5px;color:${NAV.teal}"></i>Analyse Stock de Sécurité</div>
+        <div style="font-size:12px;font-weight:700;margin-bottom:10px"><i class="ti ti-package" style="margin-right:5px;color:${NAV.teal}"></i>Analyse Stock de Sécurité — Simulation</div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px">
           ${[{l:"SS Calculé",v:ss,c:NAV.teal,sub:"Z × MAD"},{l:"SS Actuel",v:ssAct,c:"#1E293B",sub:"En stock"},{l:"Gap",v:(gap>0?"+":"")+gap,c:gap>0?NAV.danger:NAV.ok,sub:gap>0?"À couvrir":"Excédent"}].map(k=>`<div style="background:#F8FAFC;border-radius:8px;padding:8px;text-align:center">
             <div class="lbl">${k.l}</div>
@@ -937,10 +1069,28 @@ function renderMasterFile(it,ss,ssAct,gap,p,avgMad,cfg){
             <div style="font-size:9px;color:#64748B">${k.sub}</div>
           </div>`).join("")}
         </div>
-        <div style="background:#F8FAFC;border-radius:8px;padding:8px;font-size:10px;color:#64748B">
+        <div style="background:#F8FAFC;border-radius:8px;padding:8px;font-size:10px;color:#64748B;margin-bottom:10px">
           <span style="font-weight:700;color:#1E293B">Formule APICS simplifiée : </span>
-          SS = Z × MAD = ${cfg.service===90?"1.28":cfg.service===95?"1.65":cfg.service===98?"2.05":"2.33"} × ${avgMad} = <strong style="color:${NAV.teal}">${ss}</strong>
+          SS = Z × MAD = ${Z_TABLE[cfg.service]||1.65} × ${avgMad} = <strong style="color:${NAV.teal}">${ss}</strong>
           <span style="display:block;margin-top:2px;font-size:9px">Lead time exclu (simplification EGBS)</span>
+        </div>
+        <div style="background:#F8FAFC;border-radius:8px;padding:10px">
+          <div style="font-size:10px;font-weight:700;color:#1E293B;margin-bottom:8px">
+            Table Z — Simulation taux de service
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px">
+            ${[50,55,60,65,70,75,80,85,90,91,92,93,94,95,96,97,98,99,99.5,99.9].map(sl=>{
+              const z=Z_TABLE[sl]||Z_TABLE[Math.round(sl)]||1.65;
+              const ssSimul=Math.round(z*avgMad);
+              const isActive=sl===cfg.service;
+              return`<div onclick="updateSSSimul('${it.id}',${sl})" style="cursor:pointer;border-radius:6px;padding:5px 4px;text-align:center;background:${isActive?NAV.navy:"#fff"};border:1px solid ${isActive?NAV.navy:"#E2E8F0"};transition:all .15s">
+                <div style="font-size:9px;font-weight:700;color:${isActive?"#fff":"#64748B"}">${sl}%</div>
+                <div style="font-size:11px;font-weight:700;color:${isActive?NAV.teal:NAV.blue};margin-top:1px">${ssSimul}</div>
+                <div style="font-size:8px;color:${isActive?"#94a3b8":"#94a3b8"}">Z=${z}</div>
+              </div>`;
+            }).join("")}
+          </div>
+          <div style="font-size:9px;color:#64748B;margin-top:6px;text-align:center">Cliquer sur un taux pour simuler · MAD = ${avgMad} unités</div>
         </div>
       </div>
       <div class="card">
@@ -1122,9 +1272,14 @@ function renderRapport(){
         <div style="font-size:15px;font-weight:700">Rapport EDI — ${new Date().toLocaleDateString("fr-FR")}</div>
         <div style="font-size:11px;color:#64748B">${allFlags.length} alerte(s) · Config par client active</div>
       </div>
-      <button onclick="window.print()" style="background:${NAV.teal};color:#fff;border:none;border-radius:8px;padding:7px 16px;font-weight:700;font-size:12px;cursor:pointer">
-        <i class="ti ti-printer" style="margin-right:5px"></i>Imprimer / PDF
-      </button>
+<div style="display:flex;gap:8px">
+        <button onclick="window.print()" style="background:${NAV.teal};color:#fff;border:none;border-radius:8px;padding:7px 14px;font-weight:700;font-size:12px;cursor:pointer">
+          <i class="ti ti-printer" style="margin-right:5px"></i>Imprimer / PDF
+        </button>
+        <button onclick="showEmailModal()" style="background:${NAV.blue};color:#fff;border:none;border-radius:8px;padding:7px 14px;font-weight:700;font-size:12px;cursor:pointer">
+          <i class="ti ti-mail-forward" style="margin-right:5px"></i>Envoyer par email
+        </button>
+      </div>
     </div>
     <div style="background:${NAV.navy};border-radius:12px;padding:14px 18px;margin-bottom:14px;display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
       ${[{l:"Références",v:filtered.length,c:"#fff"},{l:"Alertes",v:allFlags.length,c:allFlags.length>0?NAV.danger:NAV.ok},{l:"Clients T1",v:CLIENTS_DEF.length,c:NAV.accent},{l:"Réceptions",v:6,c:NAV.teal}].map(k=>`<div style="text-align:center">
@@ -1171,7 +1326,9 @@ function attachEvents(){
     el.addEventListener("change",e=>{
       const cli=el.dataset.cfg,z=el.dataset.ts;
       const nc=JSON.parse(JSON.stringify(S.clientCfgs));
-      nc[cli].ts[z]=+e.target.value;ss({clientCfgs:nc});
+      nc[cli].ts[z]=+e.target.value;
+      ss({clientCfgs:nc});
+      if(GSConnector.isConfigured()) GSConnector.pushConfig(cli);
     });
   });
   document.querySelectorAll("[data-cfg][data-bias]").forEach(el=>{
@@ -1245,29 +1402,51 @@ function handleMasterFile(file){
     const count=Object.keys(newMaster).length;
     S.itemMaster={...S.itemMaster,...newMaster};
     const el=document.getElementById("masterStatus");
-    if(el)el.innerHTML=`<div style="padding:6px 8px;background:${NAV.ok}18;border-radius:6px;font-size:10px;color:${NAV.ok};font-weight:600;margin-top:6px">
-      <i class="ti ti-circle-check" style="margin-right:4px"></i>${count} articles importés
-    </div>`;
+    if(el)el.innerHTML='<div style="padding:6px 8px;background:'+NAV.ok+'18;border-radius:6px;font-size:10px;color:'+NAV.ok+';font-weight:600;margin-top:6px">'
+      +'<i class="ti ti-circle-check" style="margin-right:4px"></i>'+count+' articles importés</div>';
+    if(GSConnector.isConfigured()){
+      GSConnector.pushMaster(newMaster).then(res=>{
+        if(el&&res&&res.status==="ok")
+          el.innerHTML='<div style="padding:6px 8px;background:'+NAV.ok+'18;border-radius:6px;font-size:10px;color:'+NAV.ok+';font-weight:600;margin-top:6px">'
+            +'<i class="ti ti-circle-check" style="margin-right:4px"></i>'+count+' articles → Google Sheets ✅</div>';
+      }).catch(()=>{});
+    }
+    ss({});
   };
   r.readAsText(file,"utf-8");
 }
 
 function doImport(){
+  const toSync=[];
   S.importedFiles.forEach(f=>{
     f.dataRows.forEach(row=>{
       const ref=row.REFERENCE;
       const it=ITEMS_DEF.find(i=>i.id===ref);
       if(!it)return;
       const recs=S.ediData[ref]||[];
-      S.ediData[ref]=[...recs.slice(-5),{id:f.meta.reception||`R${String(recs.length+1).padStart(2,"0")}`,date:f.meta.date||new Date().toLocaleDateString("fr-FR"),dateObj:new Date(),qtys:row._qtys,clientId:it.cli}];
+      const newRec={
+        id:f.meta.reception||`R${String(recs.length+1).padStart(2,"0")}`,
+        date:f.meta.date||new Date().toLocaleDateString("fr-FR"),
+        dateObj:new Date(),qtys:row._qtys,clientId:it.cli
+      };
+      S.ediData[ref]=[...recs.slice(-5),newRec];
     });
+    toSync.push(f);
   });
   S.importedFiles=[];
   const suc=document.getElementById("importSuccess");
   if(suc)suc.style.display="block";
   const act=document.getElementById("importActions2");
   if(act)act.style.display="none";
-  setTimeout(()=>ss({showImport:false}),1500);
+  if(GSConnector.isConfigured()){
+    Promise.all(toSync.map(f=>GSConnector.pushEDI(f))).then(results=>{
+      const ok=results.filter(r=>r&&r.status==="ok").length;
+      if(suc)suc.innerHTML='<i class="ti ti-circle-check" style="margin-right:6px"></i>Import OK · '+ok+' fichier(s) sync Google Sheets ✅';
+    }).catch(()=>{
+      if(suc)suc.innerHTML='<i class="ti ti-circle-check" style="margin-right:6px"></i>Import local OK · GS non joignable';
+    });
+  }
+  setTimeout(()=>ss({showImport:false}),2200);
 }
 
 
@@ -1674,7 +1853,7 @@ function renderMasterFile(it,ss,ssAct,gap,p,avgMad,cfg){
     </div>
     <div style="display:flex;flex-direction:column;gap:10px">
       <div class="card">
-        <div style="font-size:12px;font-weight:700;margin-bottom:10px"><i class="ti ti-package" style="margin-right:5px;color:${NAV.teal}"></i>Analyse Stock de Sécurité</div>
+        <div style="font-size:12px;font-weight:700;margin-bottom:10px"><i class="ti ti-package" style="margin-right:5px;color:${NAV.teal}"></i>Analyse Stock de Sécurité — Simulation</div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px">
           ${[{l:"SS Calculé",v:ss,c:NAV.teal,sub:"Z × MAD"},{l:"SS Actuel",v:ssAct,c:"#1E293B",sub:"En stock"},{l:"Gap",v:(gap>0?"+":"")+gap,c:gap>0?NAV.danger:NAV.ok,sub:gap>0?"À couvrir":"Excédent"}].map(k=>`<div style="background:#F8FAFC;border-radius:8px;padding:8px;text-align:center">
             <div class="lbl">${k.l}</div>
@@ -1682,10 +1861,28 @@ function renderMasterFile(it,ss,ssAct,gap,p,avgMad,cfg){
             <div style="font-size:9px;color:#64748B">${k.sub}</div>
           </div>`).join("")}
         </div>
-        <div style="background:#F8FAFC;border-radius:8px;padding:8px;font-size:10px;color:#64748B">
+        <div style="background:#F8FAFC;border-radius:8px;padding:8px;font-size:10px;color:#64748B;margin-bottom:10px">
           <span style="font-weight:700;color:#1E293B">Formule APICS simplifiée : </span>
-          SS = Z × MAD = ${cfg.service===90?"1.28":cfg.service===95?"1.65":cfg.service===98?"2.05":"2.33"} × ${avgMad} = <strong style="color:${NAV.teal}">${ss}</strong>
+          SS = Z × MAD = ${Z_TABLE[cfg.service]||1.65} × ${avgMad} = <strong style="color:${NAV.teal}">${ss}</strong>
           <span style="display:block;margin-top:2px;font-size:9px">Lead time exclu (simplification EGBS)</span>
+        </div>
+        <div style="background:#F8FAFC;border-radius:8px;padding:10px">
+          <div style="font-size:10px;font-weight:700;color:#1E293B;margin-bottom:8px">
+            Table Z — Simulation taux de service
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px">
+            ${[50,55,60,65,70,75,80,85,90,91,92,93,94,95,96,97,98,99,99.5,99.9].map(sl=>{
+              const z=Z_TABLE[sl]||Z_TABLE[Math.round(sl)]||1.65;
+              const ssSimul=Math.round(z*avgMad);
+              const isActive=sl===cfg.service;
+              return`<div onclick="updateSSSimul('${it.id}',${sl})" style="cursor:pointer;border-radius:6px;padding:5px 4px;text-align:center;background:${isActive?NAV.navy:"#fff"};border:1px solid ${isActive?NAV.navy:"#E2E8F0"};transition:all .15s">
+                <div style="font-size:9px;font-weight:700;color:${isActive?"#fff":"#64748B"}">${sl}%</div>
+                <div style="font-size:11px;font-weight:700;color:${isActive?NAV.teal:NAV.blue};margin-top:1px">${ssSimul}</div>
+                <div style="font-size:8px;color:${isActive?"#94a3b8":"#94a3b8"}">Z=${z}</div>
+              </div>`;
+            }).join("")}
+          </div>
+          <div style="font-size:9px;color:#64748B;margin-top:6px;text-align:center">Cliquer sur un taux pour simuler · MAD = ${avgMad} unités</div>
         </div>
       </div>
       <div class="card">
@@ -1867,9 +2064,14 @@ function renderRapport(){
         <div style="font-size:15px;font-weight:700">Rapport EDI — ${new Date().toLocaleDateString("fr-FR")}</div>
         <div style="font-size:11px;color:#64748B">${allFlags.length} alerte(s) · Config par client active</div>
       </div>
-      <button onclick="window.print()" style="background:${NAV.teal};color:#fff;border:none;border-radius:8px;padding:7px 16px;font-weight:700;font-size:12px;cursor:pointer">
-        <i class="ti ti-printer" style="margin-right:5px"></i>Imprimer / PDF
-      </button>
+<div style="display:flex;gap:8px">
+        <button onclick="window.print()" style="background:${NAV.teal};color:#fff;border:none;border-radius:8px;padding:7px 14px;font-weight:700;font-size:12px;cursor:pointer">
+          <i class="ti ti-printer" style="margin-right:5px"></i>Imprimer / PDF
+        </button>
+        <button onclick="showEmailModal()" style="background:${NAV.blue};color:#fff;border:none;border-radius:8px;padding:7px 14px;font-weight:700;font-size:12px;cursor:pointer">
+          <i class="ti ti-mail-forward" style="margin-right:5px"></i>Envoyer par email
+        </button>
+      </div>
     </div>
     <div style="background:${NAV.navy};border-radius:12px;padding:14px 18px;margin-bottom:14px;display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
       ${[{l:"Références",v:filtered.length,c:"#fff"},{l:"Alertes",v:allFlags.length,c:allFlags.length>0?NAV.danger:NAV.ok},{l:"Clients T1",v:CLIENTS_DEF.length,c:NAV.accent},{l:"Réceptions",v:6,c:NAV.teal}].map(k=>`<div style="text-align:center">
@@ -1911,117 +2113,59 @@ function renderRapport(){
     </div>`;
 }
 
-function attachEvents(){
-  document.querySelectorAll("[data-cfg][data-ts]").forEach(el=>{
-    el.addEventListener("change",e=>{
-      const cli=el.dataset.cfg,z=el.dataset.ts;
-      const nc=JSON.parse(JSON.stringify(S.clientCfgs));
-      nc[cli].ts[z]=+e.target.value;ss({clientCfgs:nc});
-    });
-  });
-  document.querySelectorAll("[data-cfg][data-bias]").forEach(el=>{
-    el.addEventListener("change",e=>{
-      const cli=el.dataset.cfg,k=el.dataset.bias==="warn"?"biasWarn":"biasDanger";
-      const nc=JSON.parse(JSON.stringify(S.clientCfgs));
-      nc[cli][k]=+e.target.value;ss({clientCfgs:nc});
-    });
-  });
-  document.querySelectorAll("[data-sl]").forEach(el=>{
-    el.addEventListener("change",e=>{
-      const cli=el.dataset.cfg||S.cfgClient;
-      const nc=JSON.parse(JSON.stringify(S.clientCfgs));
-      nc[cli].service=+e.target.value;ss({clientCfgs:nc});
-    });
-  });
-  const dh=document.querySelector("[data-help-search]");
-  if(dh)dh.addEventListener("input",e=>ss({helpSearch:e.target.value}));
-  const dropEDI=document.getElementById("dropEDI");
-  const fileEDI=document.getElementById("fileEDI");
-  if(dropEDI){
-    dropEDI.addEventListener("dragover",e=>{e.preventDefault();dropEDI.classList.add("drag");});
-    dropEDI.addEventListener("dragleave",()=>dropEDI.classList.remove("drag"));
-    dropEDI.addEventListener("drop",e=>{e.preventDefault();dropEDI.classList.remove("drag");handleEDIFiles(e.dataTransfer.files);});
-  }
-  if(fileEDI)fileEDI.addEventListener("change",e=>handleEDIFiles(e.target.files));
-  const dropM=document.getElementById("dropMaster");
-  const fileM=document.getElementById("fileMaster");
-  if(dropM){
-    dropM.addEventListener("dragover",e=>{e.preventDefault();dropM.classList.add("drag");});
-    dropM.addEventListener("dragleave",()=>dropM.classList.remove("drag"));
-    dropM.addEventListener("drop",e=>{e.preventDefault();dropM.classList.remove("drag");handleMasterFile(e.dataTransfer.files[0]);});
-  }
-  if(fileM)fileM.addEventListener("change",e=>handleMasterFile(e.target.files[0]));
-  const btn=document.getElementById("btnDoImport");
-  if(btn)btn.addEventListener("click",doImport);
+// ── EMAIL MODAL ──────────────────────────────────────────────
+function showEmailModal(){
+  const modal=document.createElement('div');
+  modal.id='emailModal';
+  modal.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:#0008;z-index:9999;display:flex;align-items:center;justify-content:center';
+  const allFlags=getAllFlags();
+  const flagSummary=allFlags.length>0
+    ? allFlags.map(f=>`• ${f.item.id} — ${f.item.label} | Zone ${f.zone} | TS=${f.ts}`).join('\n')
+    : '✓ Aucune alerte — Programmes EDI stables';
+  const subject=`[OPTIPLAN] Analyse EDI — ${new Date().toLocaleDateString('fr-FR')} — ${allFlags.length} alerte(s)`;
+  const body=`Bonjour,\n\nVeuillez trouver ci-dessous l'analyse des programmes EDI reçus.\n\n--- RÉSUMÉ ---\nDate : ${new Date().toLocaleDateString('fr-FR')}\nRéférences analysées : ${ITEMS_DEF.length}\nAlertes actives : ${allFlags.length}\n\n--- ALERTES ---\n${flagSummary}\n\nCordialement,\nEGBS — Supply Chain OPTIPLAN`;
+  modal.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;width:520px;max-width:95vw;box-shadow:0 20px 60px #0004">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div style="font-size:14px;font-weight:700">Envoyer le rapport par email</div>
+      <button onclick="document.getElementById('emailModal').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:#64748B">×</button>
+    </div>
+    <div style="margin-bottom:10px">
+      <label style="font-size:11px;font-weight:600;color:#64748B;display:block;margin-bottom:4px">Destinataire(s)</label>
+      <input id="emailTo" type="email" placeholder="responsable@egbs.ma; direction@egbs.ma" style="width:100%;padding:8px 10px;border:1px solid #E2E8F0;border-radius:8px;font-size:12px;outline:none">
+    </div>
+    <div style="margin-bottom:10px">
+      <label style="font-size:11px;font-weight:600;color:#64748B;display:block;margin-bottom:4px">Objet</label>
+      <input id="emailSubj" type="text" value="${subject.replace(/"/g,"'")}" style="width:100%;padding:8px 10px;border:1px solid #E2E8F0;border-radius:8px;font-size:12px;outline:none">
+    </div>
+    <div style="margin-bottom:16px">
+      <label style="font-size:11px;font-weight:600;color:#64748B;display:block;margin-bottom:4px">Message</label>
+      <textarea id="emailBody" rows="8" style="width:100%;padding:8px 10px;border:1px solid #E2E8F0;border-radius:8px;font-size:11px;font-family:monospace;outline:none;resize:vertical">${body.replace(/"/g,"'")}</textarea>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="document.getElementById('emailModal').remove()" style="background:none;border:1px solid #E2E8F0;border-radius:8px;padding:8px 16px;font-size:12px;cursor:pointer;color:#64748B">Annuler</button>
+      <button onclick="sendEmail()" style="background:#1A4A8A;color:#fff;border:none;border-radius:8px;padding:8px 20px;font-size:12px;font-weight:700;cursor:pointer">
+        <i class="ti ti-send" style="margin-right:5px"></i>Envoyer via mailto
+      </button>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
 }
 
-function handleEDIFiles(files){
-  const arr=[...files];let done=0;const parsed=[];
-  arr.forEach(f=>{
-    const r=new FileReader();
-    r.onload=e=>{parsed.push(parseEDICSV(e.target.result,f.name));done++;
-      if(done===arr.length){
-        S.importedFiles=parsed;
-        const el=document.getElementById("ediFileList");
-        if(el)el.innerHTML=parsed.map(p=>`<div style="display:flex;align-items:center;gap:6px;margin-top:6px;padding:6px 8px;background:#F8FAFC;border-radius:6px;font-size:10px">
-          <i class="ti ti-file-spreadsheet" style="color:${NAV.ok}"></i>
-          <span style="flex:1;font-weight:600">${p.fileName}</span>
-          <span style="color:#64748B">${p.dataRows.length} réf.</span>
-          <span class="pill" style="background:${NAV.ok}22;color:${NAV.ok}">✓</span>
-        </div>`).join("");
-        const preview=document.getElementById("importPreview");
-        if(preview)preview.innerHTML=`<div style="background:${NAV.accent}12;border:0.5px solid ${NAV.accent}44;border-radius:8px;padding:10px;font-size:11px;color:#64748B">
-          <strong style="color:${NAV.accent}">${parsed.length} fichier(s) · ${parsed.reduce((a,f)=>a+f.dataRows.length,0)} références détectées</strong>
-          ${parsed.map(f=>`<div style="margin-top:4px">${f.fileName} · ${f.meta.reception||"?"} · ${f.dataRows.length} réf.</div>`).join("")}
-        </div>`;
-        const act=document.getElementById("importActions2");
-        if(act)act.style.display="block";
-      }
-    };
-    r.readAsText(f,"utf-8");
-  });
+function sendEmail(){
+  const to=document.getElementById('emailTo').value;
+  const subj=document.getElementById('emailSubj').value;
+  const body=document.getElementById('emailBody').value;
+  if(!to){alert('Veuillez renseigner un destinataire');return;}
+  const mailto=`mailto:\${to}?subject=\${encodeURIComponent(subj)}&body=\${encodeURIComponent(body)}`;
+  window.location.href=mailto;
+  document.getElementById('emailModal').remove();
 }
-
-function handleMasterFile(file){
-  if(!file)return;
-  const r=new FileReader();
-  r.onload=e=>{
-    const newMaster=parseItemMasterCSV(e.target.result);
-    const count=Object.keys(newMaster).length;
-    S.itemMaster={...S.itemMaster,...newMaster};
-    const el=document.getElementById("masterStatus");
-    if(el)el.innerHTML=`<div style="padding:6px 8px;background:${NAV.ok}18;border-radius:6px;font-size:10px;color:${NAV.ok};font-weight:600;margin-top:6px">
-      <i class="ti ti-circle-check" style="margin-right:4px"></i>${count} articles importés
-    </div>`;
-  };
-  r.readAsText(file,"utf-8");
-}
-
-function doImport(){
-  S.importedFiles.forEach(f=>{
-    f.dataRows.forEach(row=>{
-      const ref=row.REFERENCE;
-      const it=ITEMS_DEF.find(i=>i.id===ref);
-      if(!it)return;
-      const recs=S.ediData[ref]||[];
-      S.ediData[ref]=[...recs.slice(-5),{id:f.meta.reception||`R${String(recs.length+1).padStart(2,"0")}`,date:f.meta.date||new Date().toLocaleDateString("fr-FR"),dateObj:new Date(),qtys:row._qtys,clientId:it.cli}];
-    });
-  });
-  S.importedFiles=[];
-  const suc=document.getElementById("importSuccess");
-  if(suc)suc.style.display="block";
-  const act=document.getElementById("importActions2");
-  if(act)act.style.display="none";
-  setTimeout(()=>ss({showImport:false}),1500);
-}
-
-
-
-// ── GOOGLE SHEETS CONNECTOR ──────────────────────────────────
-// Remplacer cette URL par l'URL de déploiement de votre Apps Script
-
 
 render();
+// Auto-connect Google Sheets au démarrage si URL configurée
+if(GSConnector.isConfigured()){
+  setTimeout(()=>GSConnector.loadAll(), 800);
+}
 </script>
 </body>
 </html>
