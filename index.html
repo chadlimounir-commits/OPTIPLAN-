@@ -1390,14 +1390,6 @@ function renderGSConfig() {
   }
 }
 
-function connectGS() {
-  const input = document.getElementById("gsUrlInput");
-  if (!input || !input.value.trim()) return;
-  APPS_SCRIPT_URL = input.value.trim();
-  ss({});
-  GSConnector.loadAll();
-}
-
 function renderImportPanel(){
   return`<div style="background:#0B1F3A;border-bottom:1px solid #1e3a5f;padding:14px 18px">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
@@ -2027,90 +2019,6 @@ function doImport(){
 
 // ── GOOGLE SHEETS CONNECTOR ──────────────────────────────────
 // Remplacer cette URL par l'URL de déploiement de votre Apps Script
-let APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwofZE_NaRemL-D14TPsT5f1pj96Sk9JJqGYZXi6WbxGYo8X0yzUIG9AC9uKXSBeXH7Lw/exec";
-
-const GSConnector = {
-  isConfigured: () => APPS_SCRIPT_URL !== "",
-
-  async get(action, params = {}) {
-    if (!this.isConfigured()) return null;
-    const url = new URL(APPS_SCRIPT_URL);
-    url.searchParams.set("action", action);
-    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-    try {
-      const r = await fetch(url.toString());
-      return await r.json();
-    } catch(e) { console.error("GS GET error:", e); return null; }
-  },
-
-  async post(action, data) {
-    if (!this.isConfigured()) return null;
-    try {
-      const r = await fetch(APPS_SCRIPT_URL, {
-        method: "POST",
-        body: JSON.stringify({ action, data }),
-      });
-      return await r.json();
-    } catch(e) { console.error("GS POST error:", e); return null; }
-  },
-
-  // Load all data from Google Sheets
-  async loadAll() {
-    const [cfgRes, itemsRes] = await Promise.all([
-      this.get("getConfig"),
-      this.get("getItems"),
-    ]);
-    if (cfgRes?.status === "ok") {
-      const cfgMap = {};
-      cfgRes.data.forEach(c => { cfgMap[c.id] = c; });
-      S.clientCfgs = cfgMap;
-    }
-    if (itemsRes?.status === "ok") {
-      // Extend ITEMS_DEF with live data — merge
-      itemsRes.data.forEach(it => {
-        const ex = ITEMS_DEF.find(i => i.id === it.id);
-        if (ex) { Object.assign(ex, it); }
-        if (S.itemMaster[it.id]) S.itemMaster[it.id].ss_actuel = it.ss_actuel;
-      });
-    }
-    const ediRes = await this.get("getEDIHistory");
-    if (ediRes?.status === "ok") {
-      Object.entries(ediRes.data).forEach(([ref, recs]) => {
-        if (recs.length > 0) S.ediData[ref] = recs;
-      });
-    }
-    ss({});
-    return true;
-  },
-
-  // Push config change for one client
-  async pushConfig(clientId) {
-    const cfg = S.clientCfgs[clientId];
-    const clDef = CLIENTS_DEF.find(c => c.id === clientId);
-    return this.post("saveConfig", { id: clientId, label: clDef?.label, color: clDef?.color, ...cfg });
-  },
-
-  // Push EDI import
-  async pushEDI(parsedFile) {
-    const rows = [];
-    parsedFile.dataRows.forEach(row => {
-      const it = ITEMS_DEF.find(i => i.id === row.REFERENCE);
-      if (!it) return;
-      rows.push({ ref: row.REFERENCE, clientId: it.cli, bucket: row._bucket || "week", qtys: row._qtys });
-    });
-    return this.post("importEDI", {
-      fileName: parsedFile.fileName,
-      meta: parsedFile.meta,
-      rows,
-    });
-  },
-
-  // Push Item Master update
-  async pushMaster(masterData) {
-    const rows = Object.entries(masterData).map(([ref, v]) => ({ ref, ss_actuel: v.ss_actuel, uom: v.uom }));
-    return this.post("importMaster", rows);
-  },
-};
 
 
 render();
