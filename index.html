@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>OPTIPLAN — Demand Governance v0.3 | FR/EN</title>
-<script src="https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.min.js"></script>
+<!-- Recharts non utilisé en mode HTML pur -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -634,7 +634,7 @@ function renderConfigPanel(){
             </div>
           </div>`}
     </div>
-  </div>\`;
+  </div>`;
 }
 
 function connectGS() {
@@ -1359,24 +1359,759 @@ const GSConnector = {
   },
 };
 
-// Google Sheets URL config UI — injected into import panel
+// Google Sheets URL config UI
 function renderGSConfig() {
-  return GSConnector.isConfigured()
-    ? \`<div style="background:#0f2e1a;border:0.5px solid ${NAV.ok};border-radius:8px;padding:8px 12px;font-size:11px;color:${NAV.ok};display:flex;gap:8px;align-items:center">
-        <i class="ti ti-brand-google" style="font-size:14px"></i>
-        Google Sheets connecté
-        <button onclick="GSConnector.loadAll()" style="margin-left:auto;background:#1e3a5f;border:none;color:#94a3b8;border-radius:5px;padding:3px 8px;font-size:10px;cursor:pointer">Sync ↻</button>
-      </div>\`
-    : \`<div style="background:#1e3a5f;border-radius:8px;padding:8px 12px">
-        <div style="color:#94a3b8;font-size:10px;font-weight:700;text-transform:uppercase;margin-bottom:4px">Google Sheets (optionnel)</div>
-        <div style="display:flex;gap:6px">
-          <input id="gsUrl" type="text" placeholder="https://script.google.com/macros/s/.../exec"
-            style="flex:1;background:#0B1F3A;border:1px solid #334155;color:#fff;border-radius:6px;padding:4px 8px;font-size:10px">
-          <button onclick="APPS_SCRIPT_URL=document.getElementById('gsUrl').value;GSConnector.loadAll();"
-            style="background:${NAV.teal};color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:10px;font-weight:700;cursor:pointer">Connecter</button>
-        </div>
-      </div>\`;
+  if (GSConnector.isConfigured()) {
+    return '<div style="background:#0f2e1a;border:0.5px solid #10B981;border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:10px">'
+      + '<i class="ti ti-circle-check" style="color:#10B981;font-size:16px"></i>'
+      + '<div>'
+      + '<div style="color:#10B981;font-size:11px;font-weight:700">Google Sheets connecté ✅</div>'
+      + '<div style="color:#64748b;font-size:10px;word-break:break-all;margin-top:2px">' + APPS_SCRIPT_URL.slice(0,70) + '…</div>'
+      + '</div>'
+      + '<div style="margin-left:auto;display:flex;gap:6px">'
+      + '<button onclick="GSConnector.loadAll()" style="background:#1e3a5f;border:none;color:#94a3b8;border-radius:5px;padding:4px 10px;font-size:10px;cursor:pointer;font-weight:600">'
+      + '<i class="ti ti-refresh" style="margin-right:3px"></i>Sync</button>'
+      + '<button onclick="APPS_SCRIPT_URL=\'\';ss({})" style="background:#1e3a5f;border:none;color:#EF4444;border-radius:5px;padding:4px 10px;font-size:10px;cursor:pointer;font-weight:600">'
+      + 'Déconnecter</button>'
+      + '</div></div>';
+  } else {
+    return '<div style="background:#1e3a5f;border-radius:8px;padding:8px 12px">'
+      + '<div style="color:#94a3b8;font-size:10px;font-weight:700;text-transform:uppercase;margin-bottom:4px">Google Sheets (optionnel)</div>'
+      + '<div style="display:flex;gap:6px">'
+      + '<input id="gsUrlInput" type="text" placeholder="https://script.google.com/macros/s/.../exec"'
+      + ' style="flex:1;background:#0B1F3A;border:1px solid #334155;color:#fff;border-radius:6px;padding:4px 8px;font-size:10px;outline:none"'
+      + ' onkeydown="if(event.key===\'Enter\'){connectGS()}">'
+      + '<button onclick="connectGS()" style="background:#00C9B1;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:10px;font-weight:700;cursor:pointer">'
+      + '<i class="ti ti-plug-connected" style="margin-right:3px"></i>Connecter</button>'
+      + '</div>'
+      + '<div style="margin-top:5px;font-size:9px;color:#475569">'
+      + 'Apps Script → Déployer → Application Web → Copier URL ici'
+      + '</div></div>';
+  }
 }
+
+function connectGS() {
+  const input = document.getElementById("gsUrlInput");
+  if (!input || !input.value.trim()) return;
+  APPS_SCRIPT_URL = input.value.trim();
+  ss({});
+  GSConnector.loadAll();
+}
+
+function renderImportPanel(){
+  return`<div style="background:#0B1F3A;border-bottom:1px solid #1e3a5f;padding:14px 18px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div>
+        <div style="color:#94a3b8;font-size:10px;font-weight:700;text-transform:uppercase;margin-bottom:8px">
+          <i class="ti ti-file-spreadsheet" style="margin-right:4px;color:${NAV.accent}"></i>Import EDI programmes (CSV)
+        </div>
+        <div class="drop-zone" id="dropEDI" onclick="document.getElementById('fileEDI').click()">
+          <i class="ti ti-upload" style="font-size:22px;color:#64748b;display:block;margin-bottom:6px"></i>
+          <div style="font-size:12px;color:#cbd5e1;font-weight:600">Glisser-déposer fichiers EDI CSV</div>
+          <div style="font-size:10px;color:#64748b;margin-top:3px">Multi-fichiers · Format OPTIPLAN v1.0 · Séparateur ;</div>
+          <div style="margin-top:8px;display:flex;gap:5px;justify-content:center">
+            <span class="pill" style="background:#00A8E822;color:#00A8E8">Hebdo</span>
+            <span class="pill" style="background:#00C9B122;color:#00C9B1">Journalier</span>
+          </div>
+        </div>
+        <input type="file" id="fileEDI" multiple accept=".csv" style="display:none">
+        <div id="ediFileList" style="margin-top:8px"></div>
+      </div>
+      <div>
+        <div style="color:#94a3b8;font-size:10px;font-weight:700;text-transform:uppercase;margin-bottom:8px">
+          <i class="ti ti-package" style="margin-right:4px;color:${NAV.teal}"></i>Import Item Master — SS actuel (CSV)
+        </div>
+        <div class="drop-zone" id="dropMaster" onclick="document.getElementById('fileMaster').click()">
+          <i class="ti ti-database-import" style="font-size:22px;color:#64748b;display:block;margin-bottom:6px"></i>
+          <div style="font-size:12px;color:#cbd5e1;font-weight:600">Fichier Item Master CSV</div>
+          <div style="font-size:10px;color:#64748b;margin-top:3px">Colonnes : REFERENCE ; SS_ACTUEL ; UOM</div>
+        </div>
+        <input type="file" id="fileMaster" accept=".csv" style="display:none">
+        <div id="masterStatus" style="margin-top:8px"></div>
+        <div style="margin-top:8px;padding:8px;background:#1e3a5f;border-radius:8px;font-size:10px;color:#64748b">
+          <div style="color:#94a3b8;font-weight:700;margin-bottom:3px">Format attendu :</div>
+          <code style="color:#00C9B1">REFERENCE;SS_ACTUEL;UOM</code><br>
+          <code style="color:#94a3b8">REF-001;150;PCS</code>
+        </div>
+      </div>
+    </div>
+    <div id="importPreview" style="margin-top:10px"></div>
+    <div id="importActions2" style="margin-top:10px;display:none">
+      <button id="btnDoImport" style="background:${NAV.accent};color:#fff;border:none;border-radius:8px;padding:7px 18px;font-weight:700;font-size:12px;cursor:pointer">
+        <i class="ti ti-database-import" style="margin-right:5px"></i>Importer dans OPTIPLAN
+      </button>
+    </div>
+    <div id="importSuccess" style="display:none;margin-top:10px;padding:10px;background:#0f2e1a;border:1px solid ${NAV.ok};border-radius:8px;color:${NAV.ok};font-size:12px;font-weight:600">
+      <i class="ti ti-circle-check" style="margin-right:6px"></i>Import réalisé avec succès
+    </div>
+  </div>`;
+}
+
+function renderMainTabs(){
+  const tabs=[
+    {id:"dashboard",label:"Dashboard",icon:"ti-layout-dashboard"},
+    {id:"item",label:"Analyse Item",icon:"ti-zoom-in"},
+    {id:"history",label:"Historique EDI",icon:"ti-history"},
+    {id:"client",label:"Vue Client T1",icon:"ti-building-factory-2"},
+    {id:"rapport",label:"Rapport",icon:"ti-file-text"},
+  ];
+  return`<div style="display:flex;gap:2px;margin-bottom:14px;background:#fff;border-radius:10px;padding:3px;width:fit-content;border:0.5px solid #E2E8F0;flex-wrap:wrap">
+    ${tabs.map(t=>`<button class="tab-btn${S.tab===t.id?" active":""}" onclick="ss({tab:'${t.id}'})">
+      <i class="ti ${t.icon}" style="margin-right:4px;font-size:11px"></i>${t.label}
+    </button>`).join("")}
+  </div>`;
+}
+
+function renderDashboard(){
+  const allFlags=getAllFlags();
+  const filtered=ITEMS_DEF.filter(it=>S.clientFilter==="all"||it.cli===S.clientFilter);
+  return`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:6px">
+      <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
+        <span style="font-size:11px;color:#64748B;font-weight:600">Client T1 :</span>
+        ${["all",...CLIENTS_DEF.map(c=>c.id)].map(cid=>{
+          const cl=CLIENTS_DEF.find(c=>c.id===cid);
+          return`<button class="filter-btn${S.clientFilter===cid?" active":""}" onclick="ss({clientFilter:'${cid}'})">
+            ${cid==="all"?"Tous clients":cl.label}
+          </button>`;
+        }).join("")}
+      </div>
+      ${allFlags.length>0?`<span style="background:${NAV.danger}18;color:${NAV.danger};border-radius:99px;padding:3px 12px;font-size:11px;font-weight:700">
+        <i class="ti ti-alert-triangle" style="margin-right:3px"></i>${allFlags.length} alerte${allFlags.length>1?"s":""}
+      </span>`:""}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-bottom:16px">
+      ${filtered.map(it=>{
+        const cfg=getCfg(it.cli);
+        const m=calcMetrics(S.ediData[it.id],cfg);
+        const p=classifyDemand(S.ediData[it.id]);
+        const clDef=CLIENTS_DEF.find(c=>c.id===it.cli);
+        const hasFlag=m&&Object.values(m).some(v=>v.flag);
+        const avgBp=m?Math.round(Object.values(m).reduce((a,v)=>a+Math.abs(v.biasPct),0)/3*10)/10:0;
+        const bt=getBiasTag(avgBp,cfg);
+        return`<div onclick="ss({selectedItem:'${it.id}',tab:'item'})"
+          style="background:#fff;border-radius:12px;padding:12px;border:1.5px solid ${hasFlag?NAV.danger:"#E2E8F0"};cursor:pointer;box-shadow:${hasFlag?`0 0 0 3px ${NAV.danger}12`:"none"}">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:7px">
+            <div>
+              <div style="font-size:10px;color:#64748B;font-weight:600">${it.id}</div>
+              <div style="font-size:12px;font-weight:700;margin-top:1px">${it.label}</div>
+              <div style="font-size:10px;margin-top:1px"><span style="color:${clDef.color};font-weight:600">${clDef.label}</span><span style="color:#64748B"> · ${it.bucket==="week"?"Sem.":"Jour"}</span></div>
+            </div>
+            ${hasFlag?`<i class="ti ti-alert-triangle" style="color:${NAV.danger};font-size:14px"></i>`:""}
+          </div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px">
+            <span class="pill" style="background:${p.color}22;color:${p.color}">${p.type}</span>
+            <span class="pill" style="background:${bt.color}18;color:${bt.color}">${bt.label} (${avgBp}%)</span>
+          </div>
+          <div style="display:flex;gap:4px">
+            ${m?Object.entries(m).map(([z,v])=>`
+              <div style="flex:1;background:${v.flag?"#FEF2F2":"#F8FAFC"};border-radius:6px;padding:4px 5px;text-align:center;border:0.5px solid ${v.flag?NAV.danger+"44":"#E2E8F0"}">
+                <div style="font-size:8px;color:#64748B;text-transform:uppercase;font-weight:700">${z.slice(0,3)}</div>
+                <div style="font-size:13px;font-weight:700;color:${v.flag?NAV.danger:"#1E293B"}">${v.ts}</div>
+                <div style="font-size:8px;color:#64748B">±${v.thresh}</div>
+              </div>`).join(""):""}
+          </div>
+        </div>`;
+      }).join("")}
+    </div>
+    ${allFlags.length>0?`<div class="card">
+      <div style="font-size:12px;font-weight:700;color:${NAV.danger};margin-bottom:10px"><i class="ti ti-alert-triangle" style="margin-right:5px"></i>Alertes actives</div>
+      <table>
+        <thead><tr>${["Référence","Client T1","Zone","TS","Biais%","Direction","Action"].map(h=>`<th>${h}</th>`).join("")}</tr></thead>
+        <tbody>
+          ${allFlags.map(f=>{
+            const cl=CLIENTS_DEF.find(c=>c.id===f.item.cli);
+            return`<tr>
+              <td style="font-weight:700;color:${NAV.blue};font-size:11px">${f.item.id} — ${f.item.label}</td>
+              <td><span style="color:${cl.color};font-weight:600;font-size:11px">${cl.label}</span></td>
+              <td><span class="pill" style="background:${f.zone==="frozen"?NAV.accent:f.zone==="slushy"?NAV.warn:NAV.teal}22;color:${f.zone==="frozen"?NAV.accent:f.zone==="slushy"?NAV.warn:NAV.teal}">${f.zone}</span></td>
+              <td style="font-weight:700;color:${f.tsFlag?NAV.danger:"#1E293B"}">${f.ts}${f.tsFlag?" 🚨":""}</td>
+              <td style="font-weight:700;color:${f.biasFlag?NAV.danger:"#1E293B"}">${f.biasPct}%${f.biasFlag?" 🚨":""}</td>
+              <td><span class="pill" style="background:${f.direction==="Sur-prog."?NAV.danger+"18":NAV.warn+"18"};color:${f.direction==="Sur-prog."?NAV.danger:NAV.warn}">${f.direction}</span></td>
+              <td><button onclick="ss({selectedItem:'${f.item.id}',tab:'item'})" style="background:${NAV.blue};color:#fff;border:none;border-radius:5px;padding:3px 9px;font-size:10px;font-weight:600;cursor:pointer">Analyser →</button></td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>`:""}`;
+}
+
+function renderItem(){
+  const it=ITEMS_DEF.find(i=>i.id===S.selectedItem);
+  const cfg=getCfg(it.cli);
+  const recs=S.ediData[it.id];
+  const m=calcMetrics(recs,cfg);
+  const p=classifyDemand(recs);
+  const clDef=CLIENTS_DEF.find(c=>c.id===it.cli);
+  const avgMad=m?Math.round(Object.values(m).reduce((a,v)=>a+v.mad,0)/3):0;
+  const ss=calcSS(avgMad,cfg.service);
+  const ssAct=S.itemMaster[it.id]?.ss_actuel||0;
+  const gap=ss-ssAct;
+  const subTabs=[{id:"metrics",label:"Métriques & Biais"},{id:"charts",label:"Tableau comparatif"},{id:"master",label:"Fiche Article"}];
+  return`
+    <div style="display:flex;gap:5px;margin-bottom:12px;flex-wrap:wrap">
+      ${ITEMS_DEF.map(i=>{
+        const hf=calcMetrics(S.ediData[i.id],getCfg(i.cli))&&Object.values(calcMetrics(S.ediData[i.id],getCfg(i.cli))).some(v=>v.flag);
+        return`<button onclick="ss({selectedItem:'${i.id}'})" style="background:${S.selectedItem===i.id?NAV.navy:"#fff"};color:${S.selectedItem===i.id?"#fff":"#1E293B"};border:1px solid ${S.selectedItem===i.id?NAV.navy:hf?NAV.danger:"#E2E8F0"};border-radius:8px;padding:4px 10px;font-size:10px;font-weight:600">${i.id}${hf?` <span style="color:${S.selectedItem===i.id?"#fff":NAV.danger}">!</span>`:""}</button>`;
+      }).join("")}
+    </div>
+    <div style="background:${NAV.navy};border-radius:12px;padding:12px 16px;margin-bottom:14px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+      <div>
+        <div style="font-size:10px;color:${clDef.color};font-weight:700">${clDef.label}</div>
+        <div style="font-size:15px;font-weight:700;color:#fff">${it.label}</div>
+        <div style="font-size:10px;color:#94a3b8;margin-top:2px">${it.id} · ${it.bucket==="week"?"Semaine":"Jour"} · ${it.famille}</div>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+        <span class="pill" style="background:${p.color};color:#fff;padding:4px 12px">${p.type}</span>
+        <div style="background:#1e3a5f;border-radius:8px;padding:7px 12px;text-align:center">
+          <div style="color:#94a3b8;font-size:9px;font-weight:700;text-transform:uppercase">SS Calculé</div>
+          <div style="color:${NAV.teal};font-size:18px;font-weight:700">${ss}</div>
+          <div style="color:#94a3b8;font-size:9px">Z×MAD · SL ${cfg.service}%</div>
+        </div>
+        <div style="background:#1e3a5f;border-radius:8px;padding:7px 12px;text-align:center">
+          <div style="color:#94a3b8;font-size:9px;font-weight:700;text-transform:uppercase">SS Actuel</div>
+          <div style="color:#fff;font-size:18px;font-weight:700">${ssAct}</div>
+          <div style="color:${gap>0?NAV.danger:NAV.ok};font-size:9px;font-weight:700">${gap>0?"Déficit":"Excédent"} ${Math.abs(gap)}</div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:3px;margin-bottom:12px;background:#F8FAFC;border-radius:8px;padding:3px;width:fit-content">
+      ${subTabs.map(t=>`<button class="tab-btn${S.itemSubTab===t.id?" active":""}" onclick="ss({itemSubTab:'${t.id}'})" style="font-size:10px;padding:4px 11px">${t.label}</button>`).join("")}
+    </div>
+    ${S.itemSubTab==="metrics"?renderItemMetrics(m,cfg):""}
+    ${S.itemSubTab==="charts"?renderItemCharts(recs):""}
+    ${S.itemSubTab==="master"?renderMasterFile(it,ss,ssAct,gap,p,avgMad,cfg):""}`;
+}
+
+function renderItemMetrics(m,cfg){
+  if(!m)return`<div class="card" style="text-align:center;color:#64748B">Pas assez de réceptions</div>`;
+  return`<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+    ${Object.entries(m).map(([z,v])=>{
+      const pct=Math.min(Math.abs(v.ts)/v.thresh,1);
+      const col=pct<0.6?NAV.ok:pct<1?NAV.warn:NAV.danger;
+      const bTag=getBiasTag(Math.abs(v.biasPct),cfg);
+      return`<div class="card" style="border:1.5px solid ${v.flag?NAV.danger:"#E2E8F0"}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span class="pill" style="background:${z==="frozen"?NAV.accent:z==="slushy"?NAV.warn:NAV.teal}22;color:${z==="frozen"?NAV.accent:z==="slushy"?NAV.warn:NAV.teal}">${z.charAt(0).toUpperCase()+z.slice(1)}</span>
+          ${v.flag?`<span style="font-size:10px;color:${NAV.danger};font-weight:700">ALERTE</span>`:""}
+        </div>
+        <div style="background:#F8FAFC;border-radius:8px;padding:9px;margin-bottom:9px">
+          <div style="font-size:9px;color:#64748B;font-weight:700;text-transform:uppercase;margin-bottom:6px">Biais du programme</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin-bottom:7px">
+            ${[
+              {l:"Cumulé",val:(v.cumBias>0?"+":"")+v.cumBias},
+              {l:"Moy./période",val:(v.meanBias>0?"+":"")+v.meanBias},
+              {l:"% prog. moyen",val:(v.biasPct>0?"+":"")+v.biasPct+"%",h:true},
+            ].map(k=>`<div style="text-align:center">
+              <div style="font-size:8px;color:#64748B;margin-bottom:2px">${k.l}</div>
+              <div style="font-size:14px;font-weight:700;color:${k.h?(v.biasFlag?NAV.danger:NAV.ok):v.cumBias>0?NAV.danger:NAV.ok}">${k.val}</div>
+            </div>`).join("")}
+          </div>
+          <div style="font-size:8px;color:#64748B;text-align:center;margin-bottom:5px">= Biais moyen (${v.meanBias}) / Prog. moyen (${v.prevMean}) × 100</div>
+          <div style="display:flex;gap:4px;justify-content:center">
+            <span class="pill" style="background:${bTag.color}18;color:${bTag.color}">${bTag.label}</span>
+            <span class="pill" style="background:#F8FAFC;color:#64748B;border:0.5px solid #E2E8F0">${v.direction}</span>
+          </div>
+          <div style="font-size:8px;color:#64748B;margin-top:4px;text-align:center">Seuils : Avert. ${cfg.biasWarn}% · Danger ${cfg.biasDanger}%</div>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <div style="flex:1;text-align:center"><div class="lbl">MAD</div><div style="font-size:18px;font-weight:700">${v.mad}</div></div>
+          <div style="flex:1;text-align:center;border-left:0.5px solid #E2E8F0"><div class="lbl">Tracking Signal</div><div style="font-size:18px;font-weight:700;color:${v.tsFlag?NAV.danger:"#1E293B"}">${v.ts}</div></div>
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:#64748B;margin-bottom:2px"><span>TS</span><span style="color:${col};font-weight:700">${v.ts} / ±${v.thresh}</span></div>
+          <div class="ts-bar-bg"><div class="ts-bar" style="width:${pct*100}%;background:${col}"></div></div>
+        </div>
+      </div>`;
+    }).join("")}
+  </div>`;
+}
+
+function renderItemCharts(recs){
+  return`<div class="card">
+    <div style="font-size:12px;font-weight:700;margin-bottom:3px">Tableau comparatif des réceptions EDI</div>
+    <div style="font-size:10px;color:#64748B;margin-bottom:12px">${recs.length} réceptions · Δ = dernière vs précédente</div>
+    <div style="overflow-x:auto">
+    <table>
+      <thead><tr>
+        <th>Période</th>
+        ${recs.map((r,i)=>`<th style="color:${i===recs.length-1?NAV.accent:"#64748B"}">${r.id}${i===recs.length-1?" (dernière)":""}</th>`).join("")}
+        <th style="color:${NAV.accent}">Δ</th><th>Zone</th>
+      </tr></thead>
+      <tbody>
+        ${WEEKS.map(w=>{
+          const last=recs[recs.length-1]?.qtys[w]||0;
+          const prev=recs[recs.length-2]?.qtys[w]||0;
+          const delta=last-prev;
+          const zone=getZone(w);
+          return`<tr>
+            <td style="font-weight:600;font-size:10px">${w}</td>
+            ${recs.map((r,i)=>`<td style="text-align:right;font-family:monospace;font-size:10px;color:${i===recs.length-1?"#1E293B":"#64748B"};font-weight:${i===recs.length-1?700:400}">${r.qtys[w]}</td>`).join("")}
+            <td style="text-align:right;font-weight:700;font-family:monospace;font-size:11px;color:${delta>0?NAV.danger:delta<0?NAV.ok:"#64748B"}">${delta>0?"+":""}${delta}</td>
+            <td><span class="pill" style="background:${zone==="frozen"?NAV.accent:zone==="slushy"?NAV.warn:NAV.teal}22;color:${zone==="frozen"?NAV.accent:zone==="slushy"?NAV.warn:NAV.teal};font-size:9px">${zone}</span></td>
+          </tr>`;
+        }).join("")}
+      </tbody>
+    </table>
+    </div>
+  </div>`;
+}
+
+function renderMasterFile(it,ss,ssAct,gap,p,avgMad,cfg){
+  return`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+    <div class="card">
+      <div style="font-size:12px;font-weight:700;margin-bottom:10px"><i class="ti ti-file-description" style="margin-right:5px;color:${NAV.accent}"></i>Fiche article</div>
+      ${[
+        {label:"Référence",value:it.id,icon:"ti-tag"},
+        {label:"Désignation",value:it.label,icon:"ti-box"},
+        {label:"Client T1",value:CLIENTS_DEF.find(c=>c.id===it.cli)?.label,icon:"ti-building-factory"},
+        {label:"Famille",value:it.famille,icon:"ti-category"},
+        {label:"Time bucket",value:it.bucket==="week"?"Semaine":"Jour",icon:"ti-calendar"},
+        {label:"Lead Time",value:`${it.lt} semaine${it.lt>1?"s":""}`,icon:"ti-clock"},
+        {label:"Niveau service",value:`${cfg.service}%`,icon:"ti-target"},
+      ].map(f=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:0.5px solid #E2E8F0">
+        <i class="ti ${f.icon}" style="font-size:13px;color:#64748B;width:15px"></i>
+        <span style="font-size:10px;color:#64748B;min-width:120px">${f.label}</span>
+        <span style="font-size:11px;font-weight:600">${f.value}</span>
+      </div>`).join("")}
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 0">
+        <i class="ti ti-chart-bar" style="font-size:13px;color:#64748B;width:15px"></i>
+        <span style="font-size:10px;color:#64748B;min-width:120px">Typolo. demande</span>
+        <span class="pill" style="background:${p.color}22;color:${p.color}">${p.type}</span>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="card">
+        <div style="font-size:12px;font-weight:700;margin-bottom:10px"><i class="ti ti-package" style="margin-right:5px;color:${NAV.teal}"></i>Analyse Stock de Sécurité</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px">
+          ${[{l:"SS Calculé",v:ss,c:NAV.teal,sub:"Z × MAD"},{l:"SS Actuel",v:ssAct,c:"#1E293B",sub:"En stock"},{l:"Gap",v:(gap>0?"+":"")+gap,c:gap>0?NAV.danger:NAV.ok,sub:gap>0?"À couvrir":"Excédent"}].map(k=>`<div style="background:#F8FAFC;border-radius:8px;padding:8px;text-align:center">
+            <div class="lbl">${k.l}</div>
+            <div style="font-size:18px;font-weight:700;color:${k.c};margin-top:2px">${k.v}</div>
+            <div style="font-size:9px;color:#64748B">${k.sub}</div>
+          </div>`).join("")}
+        </div>
+        <div style="background:#F8FAFC;border-radius:8px;padding:8px;font-size:10px;color:#64748B">
+          <span style="font-weight:700;color:#1E293B">Formule APICS simplifiée : </span>
+          SS = Z × MAD = ${cfg.service===90?"1.28":cfg.service===95?"1.65":cfg.service===98?"2.05":"2.33"} × ${avgMad} = <strong style="color:${NAV.teal}">${ss}</strong>
+          <span style="display:block;margin-top:2px;font-size:9px">Lead time exclu (simplification EGBS)</span>
+        </div>
+      </div>
+      <div class="card">
+        <div style="font-size:12px;font-weight:700;margin-bottom:8px"><i class="ti ti-history" style="margin-right:5px;color:${NAV.accent}"></i>Réceptions archivées</div>
+        ${S.ediData[it.id].map((r,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:0.5px solid #E2E8F0">
+          <span class="pill" style="background:${i===S.ediData[it.id].length-1?NAV.accent+"22":"#F8FAFC"};color:${i===S.ediData[it.id].length-1?NAV.accent:"#64748B"}">${r.id}</span>
+          <span style="font-size:10px;color:#64748B">${r.date}</span>
+          ${i===S.ediData[it.id].length-1?`<span style="font-size:9px;color:${NAV.accent};font-weight:700;margin-left:auto">Dernière</span>`:""}
+        </div>`).join("")}
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderHistory(){
+  const items=S.historyItem==="all"?ITEMS_DEF:ITEMS_DEF.filter(i=>i.id===S.historyItem);
+  return`
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+      <span class="lbl">Client :</span>
+      ${["all",...CLIENTS_DEF.map(c=>c.id)].map(cid=>{
+        const cl=CLIENTS_DEF.find(c=>c.id===cid);
+        return`<button class="filter-btn${S.historyClient===cid?" active":""}" onclick="ss({historyClient:'${cid}',historyItem:'all'})">${cid==="all"?"Tous":cl.label}</button>`;
+      }).join("")}
+      <span class="lbl" style="margin-left:10px">Référence :</span>
+      <select class="cfg-select" onchange="ss({historyItem:this.value})" style="font-size:11px">
+        <option value="all">Toutes</option>
+        ${ITEMS_DEF.filter(i=>S.historyClient==="all"||i.cli===S.historyClient).map(i=>`<option value="${i.id}"${S.historyItem===i.id?" selected":""}>${i.id} — ${i.label}</option>`).join("")}
+      </select>
+    </div>
+    ${items.filter(i=>S.historyClient==="all"||i.cli===S.historyClient).map(it=>{
+      const recs=S.ediData[it.id];
+      const cfg=getCfg(it.cli);
+      const clDef=CLIENTS_DEF.find(c=>c.id===it.cli);
+      return`<div class="card" style="margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+          <span style="font-size:10px;font-weight:700;color:${clDef.color}">${clDef.label}</span>
+          <span style="font-size:13px;font-weight:700">${it.id} — ${it.label}</span>
+          <span class="pill" style="background:#F8FAFC;color:#64748B;margin-left:auto">${recs.length} réceptions</span>
+        </div>
+        <div style="overflow-x:auto">
+        <table>
+          <thead><tr>
+            <th>Réception</th><th>Date</th>
+            ${WEEKS.map(w=>`<th style="text-align:right">${w}</th>`).join("")}
+            <th>Biais%</th><th>TS Frz</th><th>Statut</th>
+          </tr></thead>
+          <tbody>
+            ${recs.map((r,ri)=>{
+              let biasPct="-",ts="-",statusHtml=`<span class="pill" style="background:#F8FAFC;color:#64748B">Référence</span>`;
+              if(ri>0){
+                const b=calcBiasForPair(r,recs[ri-1],WEEKS);
+                biasPct=(b.biasPct>0?"+":"")+b.biasPct+"%";
+                const frzW=WEEKS.filter(w=>getZone(w)==="frozen");
+                const bFrz=calcBiasForPair(r,recs[ri-1],frzW);
+                ts=bFrz.ts;
+                const flag=Math.abs(bFrz.ts)>cfg.ts.frozen||Math.abs(b.biasPct)>cfg.biasDanger;
+                statusHtml=flag?`<span class="pill" style="background:${NAV.danger}22;color:${NAV.danger}">Alerte</span>`:`<span class="pill" style="background:${NAV.ok}22;color:${NAV.ok}">OK</span>`;
+              }
+              return`<tr style="background:${ri===recs.length-1?"#F8FAFC":"transparent"}">
+                <td style="font-weight:${ri===recs.length-1?700:400};color:${ri===recs.length-1?NAV.accent:"#1E293B"}">${r.id}</td>
+                <td style="font-size:10px;color:#64748B">${r.date}</td>
+                ${WEEKS.map(w=>`<td style="text-align:right;font-family:monospace;font-size:10px">${r.qtys[w]}</td>`).join("")}
+                <td style="font-weight:700;font-size:11px;color:${biasPct!=="-"&&parseFloat(biasPct)>cfg.biasDanger?NAV.danger:NAV.ok}">${biasPct}</td>
+                <td style="font-weight:700;font-size:11px;color:${ts!=="-"&&Math.abs(ts)>cfg.ts.frozen?NAV.danger:"#1E293B"}">${ts}</td>
+                <td>${statusHtml}</td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+        </div>
+      </div>`;
+    }).join("")}`;
+}
+
+function renderClientView(){
+  const clDef=CLIENTS_DEF.find(c=>c.id===S.viewClientId);
+  const cfg=getCfg(S.viewClientId);
+  const clientItems=ITEMS_DEF.filter(i=>i.cli===S.viewClientId);
+  const score=clientScore(clientItems,S.ediData,cfg);
+  const scoreColor=score>=85?NAV.ok:score>=65?NAV.warn:NAV.danger;
+  const allMetrics=clientItems.map(it=>{
+    const m=calcMetrics(S.ediData[it.id],cfg);
+    const avgBp=m?Math.round(Object.values(m).reduce((a,v)=>a+Math.abs(v.biasPct),0)/3*10)/10:0;
+    return{it,m,avgBp,hasFlag:m&&Object.values(m).some(v=>v.flag)};
+  });
+  const totalAlerts=allMetrics.filter(x=>x.hasFlag).length;
+  const avgBiasAll=Math.round(allMetrics.reduce((a,x)=>a+x.avgBp,0)/allMetrics.length*10)/10;
+  const stableCount=allMetrics.filter(x=>classifyDemand(S.ediData[x.it.id]).type==="Stable").length;
+  return`
+    <div style="display:flex;gap:5px;margin-bottom:14px">
+      ${CLIENTS_DEF.map(c=>`<button onclick="ss({viewClientId:'${c.id}'})"
+        style="background:${S.viewClientId===c.id?c.color:"#fff"};color:${S.viewClientId===c.id?"#fff":"#1E293B"};
+        border:1.5px solid ${S.viewClientId===c.id?c.color:"#E2E8F0"};border-radius:8px;padding:6px 16px;font-size:12px;font-weight:700">${c.label}</button>`).join("")}
+    </div>
+    <div style="background:${NAV.navy};border-radius:12px;padding:16px 20px;margin-bottom:14px;display:flex;gap:20px;align-items:center;flex-wrap:wrap">
+      <div>
+        <div style="font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Revue qualité EDI</div>
+        <div style="font-size:20px;font-weight:700;color:#fff;margin-top:2px">${clDef.label}</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px">${clientItems.length} références · ${S.ediData[clientItems[0]?.id]?.length||0} réceptions analysées</div>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <div style="text-align:center">
+          <div style="width:60px;height:60px;border-radius:50%;border:4px solid ${scoreColor};display:flex;align-items:center;justify-content:center;flex-direction:column">
+            <div style="font-size:18px;font-weight:700;color:${scoreColor}">${score}</div>
+            <div style="font-size:8px;color:#94a3b8">/100</div>
+          </div>
+          <div style="font-size:9px;color:#94a3b8;margin-top:3px">Score qualité</div>
+        </div>
+        ${[{l:"Alertes actives",v:totalAlerts,c:totalAlerts>0?NAV.danger:NAV.ok},{l:"Biais moyen",v:avgBiasAll+"%",c:avgBiasAll>cfg.biasDanger?NAV.danger:avgBiasAll>cfg.biasWarn?NAV.warn:NAV.ok},{l:"Réf. stables",v:`${stableCount}/${clientItems.length}`,c:NAV.teal}].map(k=>`<div style="background:#1e3a5f;border-radius:8px;padding:8px 14px;text-align:center">
+          <div style="font-size:18px;font-weight:700;color:${k.c}">${k.v}</div>
+          <div style="font-size:9px;color:#94a3b8;margin-top:1px">${k.l}</div>
+        </div>`).join("")}
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+      <div class="card">
+        <div style="font-size:12px;font-weight:700;margin-bottom:10px"><i class="ti ti-chart-bar" style="margin-right:5px;color:${clDef.color}"></i>Biais par référence</div>
+        <table>
+          <thead><tr><th>Référence</th><th>Biais Frz</th><th>Biais Slu</th><th>Biais Liq</th><th>Moy.</th><th>Tag</th></tr></thead>
+          <tbody>
+            ${allMetrics.map(({it,m,avgBp})=>{
+              const bt=getBiasTag(avgBp,cfg);
+              return`<tr>
+                <td style="font-weight:600;font-size:10px">${it.id}</td>
+                ${m?["frozen","slushy","liquid"].map(z=>{
+                  const b=getBiasTag(Math.abs(m[z].biasPct),cfg);
+                  return`<td style="font-weight:700;color:${b.color};font-size:11px">${m[z].biasPct>0?"+":""}${m[z].biasPct}%</td>`;
+                }).join(""):["","",""].map(()=>`<td>-</td>`).join("")}
+                <td style="font-weight:700;color:${bt.color};font-size:11px">${avgBp>0?"+":""}${avgBp}%</td>
+                <td><span class="pill" style="background:${bt.color}18;color:${bt.color};font-size:9px">${bt.label}</span></td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+        <div style="margin-top:8px;padding:7px;background:#F8FAFC;border-radius:8px;font-size:10px;color:#64748B">
+          Seuils : Avert. ${cfg.biasWarn}% · Danger ${cfg.biasDanger}% du programme moyen
+        </div>
+      </div>
+      <div class="card">
+        <div style="font-size:12px;font-weight:700;margin-bottom:10px"><i class="ti ti-radar" style="margin-right:5px;color:${clDef.color}"></i>Tracking Signal par référence</div>
+        <table>
+          <thead><tr><th>Référence</th><th>TS Frozen</th><th>TS Slushy</th><th>TS Liquid</th><th>Statut</th></tr></thead>
+          <tbody>
+            ${allMetrics.map(({it,m,hasFlag})=>`<tr>
+              <td style="font-weight:600;font-size:10px">${it.id}</td>
+              ${m?["frozen","slushy","liquid"].map(z=>`<td style="font-weight:700;font-size:11px;color:${m[z].tsFlag?NAV.danger:NAV.ok}">${m[z].ts}${m[z].tsFlag?" 🚨":" ✓"}<span style="font-size:8px;color:#64748B"> /±${m[z].thresh}</span></td>`).join(""):["","",""].map(()=>`<td>-</td>`).join("")}
+              <td><span class="pill" style="background:${hasFlag?NAV.danger+"22":NAV.ok+"22"};color:${hasFlag?NAV.danger:NAV.ok}">${hasFlag?"Alerte":"OK"}</span></td>
+            </tr>`).join("")}
+          </tbody>
+        </table>
+        <div style="margin-top:8px;padding:7px;background:#F8FAFC;border-radius:8px;font-size:10px;color:#64748B">
+          Seuils : Frozen ±${cfg.ts.frozen} · Slushy ±${cfg.ts.slushy} · Liquid ±${cfg.ts.liquid}
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div style="font-size:12px;font-weight:700;margin-bottom:10px"><i class="ti ti-message-report" style="margin-right:5px;color:${NAV.warn}"></i>Arguments de négociation — Preuves de dérive documentées</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px">
+        ${allMetrics.filter(x=>x.hasFlag||x.avgBp>cfg.biasWarn).length===0?
+          `<div style="text-align:center;padding:20px;color:#64748B;font-size:12px"><i class="ti ti-circle-check" style="font-size:20px;color:${NAV.ok};display:block;margin-bottom:6px"></i>Qualité EDI satisfaisante</div>`:
+          allMetrics.filter(x=>x.hasFlag||x.avgBp>cfg.biasWarn).map(({it,m,avgBp})=>{
+            const dir=m?Object.values(m)[0].direction:"";
+            const dom=m?Object.entries(m).filter(([,v])=>v.flag).map(([z])=>z).join(", "):"";
+            return`<div style="background:#fff7ed;border:0.5px solid ${NAV.warn}44;border-radius:8px;padding:10px">
+              <div style="font-size:11px;font-weight:700;margin-bottom:4px">${it.id} — ${it.label}</div>
+              <div style="font-size:10px;color:#64748B;line-height:1.5">Biais moyen <strong style="color:${NAV.warn}">${avgBp}%</strong> (seuil ${cfg.biasWarn}%).${dom?` Zone(s) : <strong>${dom}</strong>.`:""} Tendance : <strong>${dir}</strong>. Risque ${dir==="Sur-prog."?"sur-stock":"rupture"}.</div>
+            </div>`;
+          }).join("")}
+      </div>
+    </div>`;
+}
+
+function renderRapport(){
+  const allFlags=getAllFlags();
+  const filtered=ITEMS_DEF.filter(it=>S.clientFilter==="all"||it.cli===S.clientFilter);
+  return`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-size:15px;font-weight:700">Rapport EDI — ${new Date().toLocaleDateString("fr-FR")}</div>
+        <div style="font-size:11px;color:#64748B">${allFlags.length} alerte(s) · Config par client active</div>
+      </div>
+      <button onclick="window.print()" style="background:${NAV.teal};color:#fff;border:none;border-radius:8px;padding:7px 16px;font-weight:700;font-size:12px;cursor:pointer">
+        <i class="ti ti-printer" style="margin-right:5px"></i>Imprimer / PDF
+      </button>
+    </div>
+    <div style="background:${NAV.navy};border-radius:12px;padding:14px 18px;margin-bottom:14px;display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+      ${[{l:"Références",v:filtered.length,c:"#fff"},{l:"Alertes",v:allFlags.length,c:allFlags.length>0?NAV.danger:NAV.ok},{l:"Clients T1",v:CLIENTS_DEF.length,c:NAV.accent},{l:"Réceptions",v:6,c:NAV.teal}].map(k=>`<div style="text-align:center">
+        <div style="font-size:26px;font-weight:700;color:${k.c}">${k.v}</div>
+        <div style="font-size:10px;color:#94a3b8;margin-top:1px">${k.l}</div>
+      </div>`).join("")}
+    </div>
+    <div class="card">
+      <div style="font-size:12px;font-weight:700;margin-bottom:10px">Statut par référence</div>
+      <table>
+        <thead><tr>${["Réf.","Client","Typolo.","Biais%","Frz TS","Slu TS","Liq TS","SS calc.","SS act.","Gap","Statut"].map(h=>`<th>${h}</th>`).join("")}</tr></thead>
+        <tbody>
+          ${filtered.map(it=>{
+            const cfg=getCfg(it.cli);
+            const m=calcMetrics(S.ediData[it.id],cfg);
+            const p=classifyDemand(S.ediData[it.id]);
+            const avgM=m?Math.round(Object.values(m).reduce((a,v)=>a+v.mad,0)/3):0;
+            const s=calcSS(avgM,cfg.service);
+            const ssA=S.itemMaster[it.id]?.ss_actuel||0;
+            const gap=s-ssA;
+            const hasFlag=m&&Object.values(m).some(v=>v.flag);
+            const avgBp=m?Math.round(Object.values(m).reduce((a,v)=>a+Math.abs(v.biasPct),0)/3*10)/10:0;
+            const cl=CLIENTS_DEF.find(c=>c.id===it.cli);
+            const bt=getBiasTag(avgBp,cfg);
+            return`<tr style="background:${hasFlag?"#FEF2F2":"transparent"}">
+              <td style="font-weight:700;color:${NAV.blue};font-size:10px">${it.id}</td>
+              <td><span style="color:${cl.color};font-weight:600;font-size:10px">${cl.label}</span></td>
+              <td><span class="pill" style="background:${p.color}22;color:${p.color};font-size:9px">${p.type}</span></td>
+              <td><span class="pill" style="background:${bt.color}18;color:${bt.color};font-size:10px">${avgBp>0?"+":""}${avgBp}%</span></td>
+              ${m?["frozen","slushy","liquid"].map(z=>`<td style="font-weight:700;font-size:11px;color:${m[z].flag?NAV.danger:NAV.ok}">${m[z].ts}${m[z].flag?" 🚨":" ✓"}</td>`).join(""):["","",""].map(()=>`<td>-</td>`).join("")}
+              <td style="font-weight:700;color:${NAV.teal}">${s}</td>
+              <td>${ssA}</td>
+              <td style="font-weight:700;color:${gap>0?NAV.danger:NAV.ok}">${gap>0?"+":""}${gap}</td>
+              <td><span class="pill" style="background:${hasFlag?NAV.danger:NAV.ok};color:#fff;font-size:9px">${hasFlag?"⚠ ALERTE":"✓ OK"}</span></td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function attachEvents(){
+  document.querySelectorAll("[data-cfg][data-ts]").forEach(el=>{
+    el.addEventListener("change",e=>{
+      const cli=el.dataset.cfg,z=el.dataset.ts;
+      const nc=JSON.parse(JSON.stringify(S.clientCfgs));
+      nc[cli].ts[z]=+e.target.value;ss({clientCfgs:nc});
+    });
+  });
+  document.querySelectorAll("[data-cfg][data-bias]").forEach(el=>{
+    el.addEventListener("change",e=>{
+      const cli=el.dataset.cfg,k=el.dataset.bias==="warn"?"biasWarn":"biasDanger";
+      const nc=JSON.parse(JSON.stringify(S.clientCfgs));
+      nc[cli][k]=+e.target.value;ss({clientCfgs:nc});
+    });
+  });
+  document.querySelectorAll("[data-sl]").forEach(el=>{
+    el.addEventListener("change",e=>{
+      const cli=el.dataset.cfg||S.cfgClient;
+      const nc=JSON.parse(JSON.stringify(S.clientCfgs));
+      nc[cli].service=+e.target.value;ss({clientCfgs:nc});
+    });
+  });
+  const dh=document.querySelector("[data-help-search]");
+  if(dh)dh.addEventListener("input",e=>ss({helpSearch:e.target.value}));
+  const dropEDI=document.getElementById("dropEDI");
+  const fileEDI=document.getElementById("fileEDI");
+  if(dropEDI){
+    dropEDI.addEventListener("dragover",e=>{e.preventDefault();dropEDI.classList.add("drag");});
+    dropEDI.addEventListener("dragleave",()=>dropEDI.classList.remove("drag"));
+    dropEDI.addEventListener("drop",e=>{e.preventDefault();dropEDI.classList.remove("drag");handleEDIFiles(e.dataTransfer.files);});
+  }
+  if(fileEDI)fileEDI.addEventListener("change",e=>handleEDIFiles(e.target.files));
+  const dropM=document.getElementById("dropMaster");
+  const fileM=document.getElementById("fileMaster");
+  if(dropM){
+    dropM.addEventListener("dragover",e=>{e.preventDefault();dropM.classList.add("drag");});
+    dropM.addEventListener("dragleave",()=>dropM.classList.remove("drag"));
+    dropM.addEventListener("drop",e=>{e.preventDefault();dropM.classList.remove("drag");handleMasterFile(e.dataTransfer.files[0]);});
+  }
+  if(fileM)fileM.addEventListener("change",e=>handleMasterFile(e.target.files[0]));
+  const btn=document.getElementById("btnDoImport");
+  if(btn)btn.addEventListener("click",doImport);
+}
+
+function handleEDIFiles(files){
+  const arr=[...files];let done=0;const parsed=[];
+  arr.forEach(f=>{
+    const r=new FileReader();
+    r.onload=e=>{parsed.push(parseEDICSV(e.target.result,f.name));done++;
+      if(done===arr.length){
+        S.importedFiles=parsed;
+        const el=document.getElementById("ediFileList");
+        if(el)el.innerHTML=parsed.map(p=>`<div style="display:flex;align-items:center;gap:6px;margin-top:6px;padding:6px 8px;background:#F8FAFC;border-radius:6px;font-size:10px">
+          <i class="ti ti-file-spreadsheet" style="color:${NAV.ok}"></i>
+          <span style="flex:1;font-weight:600">${p.fileName}</span>
+          <span style="color:#64748B">${p.dataRows.length} réf.</span>
+          <span class="pill" style="background:${NAV.ok}22;color:${NAV.ok}">✓</span>
+        </div>`).join("");
+        const preview=document.getElementById("importPreview");
+        if(preview)preview.innerHTML=`<div style="background:${NAV.accent}12;border:0.5px solid ${NAV.accent}44;border-radius:8px;padding:10px;font-size:11px;color:#64748B">
+          <strong style="color:${NAV.accent}">${parsed.length} fichier(s) · ${parsed.reduce((a,f)=>a+f.dataRows.length,0)} références détectées</strong>
+          ${parsed.map(f=>`<div style="margin-top:4px">${f.fileName} · ${f.meta.reception||"?"} · ${f.dataRows.length} réf.</div>`).join("")}
+        </div>`;
+        const act=document.getElementById("importActions2");
+        if(act)act.style.display="block";
+      }
+    };
+    r.readAsText(f,"utf-8");
+  });
+}
+
+function handleMasterFile(file){
+  if(!file)return;
+  const r=new FileReader();
+  r.onload=e=>{
+    const newMaster=parseItemMasterCSV(e.target.result);
+    const count=Object.keys(newMaster).length;
+    S.itemMaster={...S.itemMaster,...newMaster};
+    const el=document.getElementById("masterStatus");
+    if(el)el.innerHTML=`<div style="padding:6px 8px;background:${NAV.ok}18;border-radius:6px;font-size:10px;color:${NAV.ok};font-weight:600;margin-top:6px">
+      <i class="ti ti-circle-check" style="margin-right:4px"></i>${count} articles importés
+    </div>`;
+  };
+  r.readAsText(file,"utf-8");
+}
+
+function doImport(){
+  S.importedFiles.forEach(f=>{
+    f.dataRows.forEach(row=>{
+      const ref=row.REFERENCE;
+      const it=ITEMS_DEF.find(i=>i.id===ref);
+      if(!it)return;
+      const recs=S.ediData[ref]||[];
+      S.ediData[ref]=[...recs.slice(-5),{id:f.meta.reception||`R${String(recs.length+1).padStart(2,"0")}`,date:f.meta.date||new Date().toLocaleDateString("fr-FR"),dateObj:new Date(),qtys:row._qtys,clientId:it.cli}];
+    });
+  });
+  S.importedFiles=[];
+  const suc=document.getElementById("importSuccess");
+  if(suc)suc.style.display="block";
+  const act=document.getElementById("importActions2");
+  if(act)act.style.display="none";
+  setTimeout(()=>ss({showImport:false}),1500);
+}
+
+
+
+// ── GOOGLE SHEETS CONNECTOR ──────────────────────────────────
+// Remplacer cette URL par l'URL de déploiement de votre Apps Script
+let APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwofZE_NaRemL-D14TPsT5f1pj96Sk9JJqGYZXi6WbxGYo8X0yzUIG9AC9uKXSBeXH7Lw/exec";
+
+const GSConnector = {
+  isConfigured: () => APPS_SCRIPT_URL !== "",
+
+  async get(action, params = {}) {
+    if (!this.isConfigured()) return null;
+    const url = new URL(APPS_SCRIPT_URL);
+    url.searchParams.set("action", action);
+    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+    try {
+      const r = await fetch(url.toString());
+      return await r.json();
+    } catch(e) { console.error("GS GET error:", e); return null; }
+  },
+
+  async post(action, data) {
+    if (!this.isConfigured()) return null;
+    try {
+      const r = await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify({ action, data }),
+      });
+      return await r.json();
+    } catch(e) { console.error("GS POST error:", e); return null; }
+  },
+
+  // Load all data from Google Sheets
+  async loadAll() {
+    const [cfgRes, itemsRes] = await Promise.all([
+      this.get("getConfig"),
+      this.get("getItems"),
+    ]);
+    if (cfgRes?.status === "ok") {
+      const cfgMap = {};
+      cfgRes.data.forEach(c => { cfgMap[c.id] = c; });
+      S.clientCfgs = cfgMap;
+    }
+    if (itemsRes?.status === "ok") {
+      // Extend ITEMS_DEF with live data — merge
+      itemsRes.data.forEach(it => {
+        const ex = ITEMS_DEF.find(i => i.id === it.id);
+        if (ex) { Object.assign(ex, it); }
+        if (S.itemMaster[it.id]) S.itemMaster[it.id].ss_actuel = it.ss_actuel;
+      });
+    }
+    const ediRes = await this.get("getEDIHistory");
+    if (ediRes?.status === "ok") {
+      Object.entries(ediRes.data).forEach(([ref, recs]) => {
+        if (recs.length > 0) S.ediData[ref] = recs;
+      });
+    }
+    ss({});
+    return true;
+  },
+
+  // Push config change for one client
+  async pushConfig(clientId) {
+    const cfg = S.clientCfgs[clientId];
+    const clDef = CLIENTS_DEF.find(c => c.id === clientId);
+    return this.post("saveConfig", { id: clientId, label: clDef?.label, color: clDef?.color, ...cfg });
+  },
+
+  // Push EDI import
+  async pushEDI(parsedFile) {
+    const rows = [];
+    parsedFile.dataRows.forEach(row => {
+      const it = ITEMS_DEF.find(i => i.id === row.REFERENCE);
+      if (!it) return;
+      rows.push({ ref: row.REFERENCE, clientId: it.cli, bucket: row._bucket || "week", qtys: row._qtys });
+    });
+    return this.post("importEDI", {
+      fileName: parsedFile.fileName,
+      meta: parsedFile.meta,
+      rows,
+    });
+  },
+
+  // Push Item Master update
+  async pushMaster(masterData) {
+    const rows = Object.entries(masterData).map(([ref, v]) => ({ ref, ss_actuel: v.ss_actuel, uom: v.uom }));
+    return this.post("importMaster", rows);
+  },
+};
+
 
 render();
 </script>
