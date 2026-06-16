@@ -1399,21 +1399,32 @@ function renderReport(){
     if(rf.status==="all")return true;
     const m=calcMetrics(EDI_DATA[it.id],CFG[it.cli]||DEFAULT_CFG);
     const hasFlag=m&&(m.frozen.flag||m.slushy.danger||m.liquid.danger);
-    if(rf.status==="alert")return hasFlag;
-    if(rf.status==="ok")return !hasFlag;
+    if(rf.status==="alert")return ALERTS_DATA.some(a=>String(a.REF_ID||"").trim()===it.id);
+    if(rf.status==="ok")return !ALERTS_DATA.some(a=>String(a.REF_ID||"").trim()===it.id);
     return true;
   });
 
   const allAlerts=getAllAlerts();
 
-  // KPIs agrégés par famille
+  // KPIs agrégés par famille — alertes depuis BDD, MAD depuis METRICS_DATA
   const famKPIs=FAMILLES.map(fam=>{
-    const items=ITEMS.filter(i=>i.fam===fam.id);
-    let totalMad=0,flagCount=0,n=0;
+    const items=ITEMS.filter(i=>
+      i.fam===fam.id &&
+      (rf.client==="all"||i.cli===rf.client)
+    );
+    // MAD moyen depuis dernière métrique en BDD par ref
+    let totalMad=0, n=0;
     items.forEach(it=>{
-      const m=calcMetrics(EDI_DATA[it.id],CFG[it.cli]||DEFAULT_CFG);
-      if(m){totalMad+=m.frozen.mad;if(m.frozen.flag||m.slushy.danger)flagCount++;n++;}
+      const mets=METRICS_DATA.filter(mx=>String(mx.REF_ID||"").trim()===it.id);
+      if(mets.length){
+        totalMad+=parseFloat(mets[mets.length-1].FROZEN_MAD)||0;
+        n++;
+      }
     });
+    // Alertes depuis BDD
+    const flagCount=ALERTS_DATA.filter(a=>
+      items.some(it=>String(a.REF_ID||"").trim()===it.id)
+    ).length;
     return{fam,items,avgMad:n>0?Math.round(totalMad/n):0,flagCount,n};
   });
 
@@ -1466,9 +1477,22 @@ function renderReport(){
       </tr></thead>
       <tbody>
         ${famKPIs.map(({fam,items,avgMad,flagCount,n})=>{
-          const totalSS=items.reduce((a,it)=>{const m=calcMetrics(EDI_DATA[it.id],CFG[it.cli]||DEFAULT_CFG);return a+calcSS(m?m.frozen.mad:0,CFG[it.cli]?.service||95);},0);
-          const totalVal=items.reduce((a,it)=>a+(SS_DATA[it.id]?.ss||0)*it.prix,0);
-          const stability=n>0?Math.round((1-flagCount/n)*100):100;
+          // SS Total : depuis METRICS_DATA (MAD réel) sinon SS_ACTUEL de ITEMS
+          const totalSS=items.reduce((a,it)=>{
+            const mets=METRICS_DATA.filter(mx=>String(mx.REF_ID||"").trim()===it.id);
+            const mad=mets.length?parseFloat(mets[mets.length-1].FROZEN_MAD)||0:0;
+            const svc=CFG[it.cli]?.service||95;
+            return a+(mad>0?calcSS(mad,svc):(SS_DATA[it.id]?.ss||0));
+          },0);
+          // Valeur stock : SS_ACTUEL × PRIX_UNITAIRE depuis ITEMS
+          const totalVal=items.reduce((a,it)=>a+(SS_DATA[it.id]?.ss||it.ss_actuel||0)*(it.prix||0),0);
+          // Stabilité : % de refs SANS alerte active (pas ratio alertes/refs)
+          const refsWithAlert=new Set(
+            ALERTS_DATA
+              .filter(a=>items.some(it=>String(a.REF_ID||"").trim()===it.id))
+              .map(a=>String(a.REF_ID||"").trim())
+          ).size;
+          const stability=items.length>0?Math.round((1-refsWithAlert/items.length)*100):100;
           const sc=stability>=85?C.ok:stability>=65?C.warn:C.danger;
           return`<tr class="family-row">
             <td><div style="display:flex;align-items:center;gap:8px">
@@ -1529,7 +1553,7 @@ function renderReport(){
           const ssCalc=calcSS(m?m.frozen.mad:0,cfg.service);
           const ssAct=SS_DATA[it.id]?.ss||0;
           const gap=ssCalc-ssAct;
-          const hasFlag=m&&(m.frozen.flag||m.slushy.danger||m.liquid.danger);
+          const hasFlag=ALERTS_DATA.some(a=>String(a.REF_ID||"").trim()===it.id);
           const cl=CLIENTS.find(c=>c.id===it.cli);
           const fam=FAMILLES.find(f=>f.id===it.fam);
           return`<tr class="${hasFlag?"alert-row":""}">
@@ -1549,7 +1573,7 @@ function renderReport(){
             <td style="text-align:center;font-weight:700;color:${C.teal}">${ssCalc}</td>
             <td style="text-align:center">${ssAct}</td>
             <td style="text-align:center;font-weight:700;color:${gap>0?C.danger:C.ok}">${gap>0?"+":""}${gap}</td>
-            <td>${hasFlag?`<span class="badge b-danger">Alerte</span>`:`<span class="badge b-ok">OK</span>`}</td>
+            <td>${ALERTS_DATA.some(a=>String(a.REF_ID||"").trim()===it.id)?`<span class="badge b-danger">Alerte</span>`:`<span class="badge b-ok">OK</span>`}</td>
           </tr>`;
         }).join("")}
       </tbody>
