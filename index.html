@@ -17,6 +17,8 @@ input,select,textarea{font-family:inherit}
 .logo-accent{font-weight:300;color:#00A8E8;letter-spacing:2px}
 .topbar-sep{width:1px;height:24px;background:#ffffff22}
 .topbar-right{margin-left:auto;display:flex;gap:8px;align-items:center}
+.gs-dot{width:8px;height:8px;border-radius:50%;background:#EF4444;flex-shrink:0}
+.gs-dot.connected{background:#10B981}
 
 /* ── WORKFLOW STEPS ── */
 .steps-bar{background:#fff;border-bottom:1px solid #E2E8F0;padding:0 20px;display:flex;align-items:center;gap:0;overflow-x:auto}
@@ -58,6 +60,7 @@ input,select,textarea{font-family:inherit}
 .btn-ghost:hover{background:#F8FAFC}
 .btn-sm{padding:6px 12px;font-size:12px}
 .btn-lg{padding:12px 24px;font-size:14px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
 
 /* ── ALERT CARDS ── */
 .alert-card{border-radius:10px;padding:14px 16px;border-left:4px solid;margin-bottom:10px;background:#fff;border-color:#E2E8F0;box-shadow:0 1px 3px #0001}
@@ -124,6 +127,12 @@ input,select,textarea{font-family:inherit}
 .toast{position:fixed;bottom:24px;right:24px;background:#0B1F3A;color:#fff;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:10px;box-shadow:0 8px 24px #0004;z-index:9999;animation:slideIn .3s ease}
 @keyframes slideIn{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
 
+/* ── LOADER ── */
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid #ffffff44;border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:#0B1F3Acc;z-index:2000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:#fff}
+.loading-overlay .spinner{width:40px;height:40px;border-width:3px}
+
 /* ── RESPONSIVE ── */
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
@@ -145,80 +154,209 @@ input,select,textarea{font-family:inherit}
 .text-ok{color:#10B981}
 .text-warn{color:#F59E0B}
 .fw-700{font-weight:700}
+
+@media(max-width:768px){
+  .grid-2,.grid-3,.grid-4{grid-template-columns:1fr}
+  .steps-bar{gap:0}
+  .step-item{padding:10px 12px;font-size:11px}
+}
 </style>
 </head>
 <body>
 <div id="app"></div>
 <script>
+// ════════════════════════════════════════════════════════════
+// OPTIPLAN — Demand Governance v0.5
+// Frontend connecté Google Apps Script (tout en GET, no CORS)
+// EGBS © 2024
+// ════════════════════════════════════════════════════════════
+
+// ── GAS CONFIG ────────────────────────────────────────────
+// URL câblée — peut être surchargée via le panneau Config
+const GAS_URL_DEFAULT = "https://script.google.com/macros/s/AKfycbwZGbBc9YQPx568MoOy8sUH4eYCRshkQeGei1rWOtor-HHeYpf93EQbev3gNGC3F7n5MA/exec";
+
 // ── CONSTANTS ──────────────────────────────────────────────
 const C={
   navy:"#0B1F3A",blue:"#1A4A8A",accent:"#00A8E8",teal:"#00C9B1",
   warn:"#F59E0B",danger:"#EF4444",ok:"#10B981",muted:"#64748B"
 };
 
-const CLIENTS=[
-  {id:"RNT",label:"Renault T1",    color:"#1A4A8A",freq:"hebdo"},
-  {id:"STL",label:"Stellantis T1", color:"#7C3AED",freq:"hebdo"},
-  {id:"VLO",label:"Valeo T1",      color:"#0F766E",freq:"quotidien"},
-];
-
-const ITEMS=[
-  {id:"7700432156",label:"Support Berceau Moteur AV",    cli:"RNT",bucket:"week",famille:"Châssis",    pn:"RNT-CH-4412"},
-  {id:"7700518823",label:"Platine Fixation Amortisseur", cli:"RNT",bucket:"week",famille:"Suspension", pn:"RNT-SU-0821"},
-  {id:"7700641047",label:"Crochet Remorquage Avant",     cli:"RNT",bucket:"week",famille:"Châssis",    pn:"RNT-CH-6610"},
-  {id:"9807345210",label:"Bras de Liaison Arrière G/D",  cli:"STL",bucket:"week",famille:"Liaison",    pn:"PSA-LI-3421"},
-  {id:"9807412088",label:"Bracket Boîte Vitesses",       cli:"STL",bucket:"day", famille:"Transmission",pn:"PSA-TR-4120"},
-  {id:"9807523661",label:"Support Train Arrière",        cli:"STL",bucket:"week",famille:"Liaison",    pn:"PSA-LI-5236"},
-  {id:"VL8834210", label:"Bride Collecteur Échappement", cli:"VLO",bucket:"week",famille:"Thermique",  pn:"VAL-TH-8834"},
-  {id:"VL8901447", label:"Support Refroidisseur Huile",  cli:"VLO",bucket:"week",famille:"Thermique",  pn:"VAL-TH-9014"},
-];
-
 const WEEKS=["S1","S2","S3","S4","S5","S6","S7","S8","S9","S10","S11","S12"];
 const Z_TABLE={50:0,55:0.13,60:0.25,65:0.39,70:0.52,75:0.67,80:0.84,85:1.04,90:1.28,91:1.34,92:1.41,93:1.48,94:1.55,95:1.65,96:1.75,97:1.88,98:2.05,99:2.33,99.5:2.58,99.9:3.09};
 
-const BASE_VOL={
-  "Châssis":    [820,840,780,860,810,790,830,850,800,820,840,810],
-  "Suspension": [640,620,650,630,660,640,620,650,630,640,660,630],
-  "Liaison":    [520,540,510,530,550,520,540,510,530,520,540,510],
-  "Transmission":[1200,1150,1250,1180,1220,1190,1230,1200,1180,1210,1240,1190],
-  "Thermique":  [380,390,370,400,385,375,395,380,390,370,400,385],
-};
-
-const SS_DATA={
-  "7700432156":{ss:450,prix:12.5},  "7700518823":{ss:280,prix:8.9},
-  "7700641047":{ss:320,prix:6.2},   "9807345210":{ss:380,prix:18.4},
-  "9807412088":{ss:1200,prix:4.1},  "9807523661":{ss:290,prix:15.6},
-  "VL8834210": {ss:180,prix:9.8},   "VL8901447": {ss:240,prix:11.2},
-};
-
 const DEFAULT_CFG={ts:{frozen:2,slushy:3,liquid:4},service:95,biasWarn:10,biasDanger:25};
 
-// ── MATH ──────────────────────────────────────────────────
-function rng(s){let x=Math.sin(s)*10000;return x-Math.floor(x);}
-function getZone(w){const i=parseInt(w.replace("S",""));return i<=2?"frozen":i<=5?"slushy":"liquid";}
+// ── STATE ─────────────────────────────────────────────────
+let GAS_URL = localStorage.getItem("optiplan_gas_url") || GAS_URL_DEFAULT;
+let GS_CONNECTED = false;
+let GS_LOADING = false;
 
-function buildEDI(seed,reception,famille){
-  const base=BASE_VOL[famille]||BASE_VOL["Châssis"];
-  const qtys={};
-  WEEKS.forEach((w,i)=>{
-    let drift=1;
-    if(reception>3){
-      const z=getZone(w);
-      if(z==="frozen")      drift=1+(reception-3)*0.09+rng(seed+reception+i)*0.04;
-      else if(z==="slushy") drift=1+(reception-3)*0.03;
-      else                  drift=1-(reception-3)*0.04+rng(seed+i)*0.03;
+// Données chargées depuis GAS
+let CLIENTS = [];
+let ITEMS   = [];
+let EDI_DATA= {};  // { refId: [{id, date, qtys:{S1..S12}}, ...] }
+let CFG     = {};  // { clientId: { ts:{frozen,slushy,liquid}, biasWarn, biasDanger, service } }
+let SS      = {};  // { refId: { ss, uom } }
+let ALERTS_CACHE = null; // cache invalidé à chaque action
+
+let S={
+  step:"home",
+  importedFiles:[],
+  importResult:false,
+  selectedItem:null,
+  selectedClient:null,
+  searchQuery:"",
+  alertFilter:"all",
+  showHelp:false,
+  showConfig:false,
+  toast:null,
+  gasError:null,
+};
+
+// ── GAS API — TOUT EN GET ─────────────────────────────────
+// Le GAS Apps Script interprète les paramètres via e.parameter
+// Pour les payloads lourds (importEDI), on encode en JSON dans ?data=
+// Le GAS doit lire : action=importEDI&data=<json_encodé>
+// Voir la version GAS ci-dessous pour les modifications correspondantes
+
+async function gasGet(params){
+  const url=new URL(GAS_URL);
+  Object.entries(params).forEach(([k,v])=>url.searchParams.set(k,typeof v==="object"?JSON.stringify(v):v));
+  try{
+    const res=await fetch(url.toString(),{redirect:"follow"});
+    if(!res.ok)throw new Error("HTTP "+res.status);
+    const json=await res.json();
+    if(json.error)throw new Error(json.error);
+    return json;
+  }catch(e){
+    throw new Error("GAS: "+e.message);
+  }
+}
+
+// ── CHARGEMENT INITIAL ────────────────────────────────────
+async function loadFromGAS(){
+  GS_LOADING=true;
+  S.gasError=null;
+  render();
+  try{
+    // 1. Config clients
+    const cfgRes=await gasGet({action:"getConfig"});
+    CLIENTS=cfgRes.data;
+    CFG={};
+    CLIENTS.forEach(c=>{
+      CFG[c.id]={ts:c.ts,biasWarn:c.biasWarn,biasDanger:c.biasDanger,service:c.service};
+    });
+
+    // 2. Items
+    const itemsRes=await gasGet({action:"getItems"});
+    ITEMS=itemsRes.data.map(i=>({
+      id:i.id,label:i.label,cli:i.cli,bucket:i.bucket,
+      famille:i.famille,lt:i.lt,
+      pn:i.id, // pas de PN client dans le GAS, on utilise l'id
+    }));
+    SS={};
+    itemsRes.data.forEach(i=>{SS[i.id]={ss:i.ss_actuel,uom:i.uom};});
+
+    // 3. Historique EDI
+    const ediRes=await gasGet({action:"getEDIHistory"});
+    EDI_DATA={};
+    Object.entries(ediRes.data).forEach(([ref,recs])=>{
+      EDI_DATA[ref]=recs.map(r=>({
+        id:r.id,
+        date:r.date,
+        qtys:r.qtys
+      })).sort((a,b)=>a.id.localeCompare(b.id));
+    });
+    // S'assurer que toutes les refs ont au moins un tableau vide
+    ITEMS.forEach(it=>{if(!EDI_DATA[it.id])EDI_DATA[it.id]=[];});
+
+    if(!S.selectedItem&&ITEMS.length)S.selectedItem=ITEMS[0].id;
+    if(!S.selectedClient&&CLIENTS.length)S.selectedClient=CLIENTS[0].id;
+
+    GS_CONNECTED=true;
+    ALERTS_CACHE=null;
+    showToast("Données chargées depuis Google Sheets","ti-cloud-check");
+  }catch(e){
+    S.gasError=e.message;
+    GS_CONNECTED=false;
+  }finally{
+    GS_LOADING=false;
+    render();
+  }
+}
+
+// ── IMPORT EDI VERS GAS ───────────────────────────────────
+// On envoie via GET avec data= encodé en JSON
+// Le GAS.doGet reçoit action=importEDI&data={...}
+async function importToGAS(parsedFiles){
+  if(!GS_CONNECTED){showToast("Connectez d'abord Google Sheets","ti-alert-triangle");return;}
+  showLoading("Import en cours...");
+  let totalImported=0;
+  let errors=[];
+  for(const f of parsedFiles){
+    const rows=f.rows.map(row=>{
+      const ref=row.REFERENCE?.trim();
+      const it=ITEMS.find(i=>i.id===ref);
+      if(!it)return null;
+      const qtys={};
+      f.periods.forEach(p=>{qtys[p]=parseInt(row._qtys[p])||0;});
+      return{ref,clientId:it.cli,bucket:f.bucket||"week",qtys};
+    }).filter(Boolean);
+
+    if(!rows.length){errors.push(f.fileName+": aucune référence reconnue");continue;}
+
+    const payload={
+      fileName:f.fileName,
+      meta:{reception:f.meta.reception,date:f.meta.date,emetteur:f.meta.emetteur},
+      rows
+    };
+    try{
+      const res=await gasGet({action:"importEDI",data:JSON.stringify(payload)});
+      totalImported+=res.imported||0;
+    }catch(e){
+      errors.push(f.fileName+": "+e.message);
     }
-    qtys[w]=Math.max(0,Math.round(base[i]*drift*(0.94+rng(seed+reception*11+i)*0.12)));
-  });
-  const d=new Date(2024,reception-1,1);
-  return{id:`R${String(reception).padStart(2,"0")}`,date:d.toLocaleDateString("fr-FR"),qtys};
+  }
+  hideLoading();
+  if(errors.length)showToast("Erreurs: "+errors.slice(0,2).join(" | "),"ti-alert-triangle",5000);
+  else showToast(`${totalImported} référence(s) importée(s) dans Google Sheets`,"ti-circle-check");
+  // Recharger les données
+  await loadFromGAS();
+  S.importResult=true;
+  S.importedFiles=[];
+  go("verify");
 }
 
-function buildAllEDI(){
-  const h={};
-  ITEMS.forEach((it,idx)=>{h[it.id]=[];for(let r=1;r<=6;r++)h[it.id].push(buildEDI((idx+1)*17,r,it.famille));});
-  return h;
+// ── IMPORT MASTER SS VERS GAS ─────────────────────────────
+async function importMasterToGAS(masterData){
+  if(!GS_CONNECTED){showToast("Connectez d'abord Google Sheets","ti-alert-triangle");return;}
+  showLoading("Mise à jour SS...");
+  const rows=Object.entries(masterData).map(([ref,v])=>({ref,ss_actuel:v.ss,uom:v.uom||"PCS"}));
+  try{
+    await gasGet({action:"importMaster",data:JSON.stringify(rows)});
+    showToast(`${rows.length} SS mis à jour dans Google Sheets`,"ti-circle-check");
+    await loadFromGAS();
+  }catch(e){
+    showToast("Erreur importMaster: "+e.message,"ti-alert-triangle");
+  }finally{
+    hideLoading();
+  }
 }
+
+// ── LOADING OVERLAY ───────────────────────────────────────
+function showLoading(msg="Chargement..."){
+  let el=document.getElementById("loadingOverlay");
+  if(!el){el=document.createElement("div");el.id="loadingOverlay";el.className="loading-overlay";document.body.appendChild(el);}
+  el.innerHTML=`<div class="spinner"></div><div style="font-size:14px;font-weight:600">${msg}</div>`;
+  el.style.display="flex";
+}
+function hideLoading(){
+  const el=document.getElementById("loadingOverlay");
+  if(el)el.style.display="none";
+}
+
+// ── MATH ─────────────────────────────────────────────────
+function getZone(w){const i=parseInt(w.replace("S",""));return i<=2?"frozen":i<=5?"slushy":"liquid";}
 
 function calcZone(last,prev,weeks){
   const errors=weeks.map(w=>(last.qtys[w]||0)-(prev.qtys[w]||0));
@@ -229,12 +367,15 @@ function calcZone(last,prev,weeks){
   const prevMean=weeks.map(w=>prev.qtys[w]||0).reduce((a,b)=>a+b,0)/n;
   const biasPct=prevMean>0?Math.round(mean/prevMean*1000)/10:0;
   const ts=mad>0?Math.round(cum/mad*100)/100:0;
-  return{cum:Math.round(cum),mean:Math.round(mean*10)/10,biasPct,mad:Math.round(mad),ts,
-    prevMean:Math.round(prevMean),direction:cum>0?"Sur-programmé":"Sous-programmé"};
+  return{
+    cum:Math.round(cum),mean:Math.round(mean*10)/10,biasPct,
+    mad:Math.round(mad),ts,prevMean:Math.round(prevMean),
+    direction:cum>0?"Sur-programmé":"Sous-programmé"
+  };
 }
 
 function calcMetrics(recs,cfg){
-  if(recs.length<2)return null;
+  if(!recs||recs.length<2)return null;
   const last=recs[recs.length-1],prev=recs[recs.length-2];
   const zones={frozen:WEEKS.filter(w=>getZone(w)==="frozen"),
                slushy:WEEKS.filter(w=>getZone(w)==="slushy"),
@@ -242,30 +383,28 @@ function calcMetrics(recs,cfg){
   const r={};
   Object.entries(zones).forEach(([z,wks])=>{
     const v=calcZone(last,prev,wks);
-    r[z]={...v,thresh:cfg.ts[z],
-      tsFlag:Math.abs(v.ts)>cfg.ts[z],
-      biasFlag:Math.abs(v.biasPct)>cfg.biasDanger,
-      flag:Math.abs(v.ts)>cfg.ts[z]||Math.abs(v.biasPct)>cfg.biasDanger};
+    r[z]={...v,thresh:(cfg.ts||DEFAULT_CFG.ts)[z],
+      tsFlag:Math.abs(v.ts)>(cfg.ts||DEFAULT_CFG.ts)[z],
+      biasFlag:Math.abs(v.biasPct)>(cfg.biasDanger||DEFAULT_CFG.biasDanger),
+      flag:Math.abs(v.ts)>(cfg.ts||DEFAULT_CFG.ts)[z]||Math.abs(v.biasPct)>(cfg.biasDanger||DEFAULT_CFG.biasDanger)};
   });
   return r;
 }
 
 function calcSS(mad,sl){return Math.round((Z_TABLE[sl]||1.65)*mad);}
-
-function avgMadFromMetrics(m){
-  if(!m)return 0;
-  return Math.round((m.frozen.mad+m.slushy.mad+m.liquid.mad)/3);
-}
+function avgMadFromMetrics(m){if(!m)return 0;return Math.round((m.frozen.mad+m.slushy.mad+m.liquid.mad)/3);}
 
 function detectGaps(rec){
+  if(!rec)return[];
   return WEEKS.filter(w=>!rec.qtys[w]||rec.qtys[w]===0);
 }
 
 function classifyDemand(recs){
-  if(!recs.length)return{type:"N/A",color:C.muted};
+  if(!recs||!recs.length)return{type:"N/A",color:C.muted};
   const q=WEEKS.map(w=>recs[recs.length-1].qtys[w]||0);
   const mean=q.reduce((a,b)=>a+b,0)/q.length;
-  const cv=mean>0?Math.sqrt(q.reduce((a,b)=>a+(b-mean)**2,0)/q.length)/mean:0;
+  if(mean===0)return{type:"N/A",color:C.muted};
+  const cv=Math.sqrt(q.reduce((a,b)=>a+(b-mean)**2,0)/q.length)/mean;
   const trend=q[q.length-1]-q[0];
   if(cv<0.2&&Math.abs(trend)<mean*0.1)return{type:"Stable",color:C.ok};
   if(Math.abs(trend)>mean*0.3)return{type:trend>0?"Tendance ↑":"Tendance ↓",color:C.accent};
@@ -273,59 +412,38 @@ function classifyDemand(recs){
   return{type:"Aléatoire",color:C.danger};
 }
 
-function clientScore(clientId,ediData,cfg){
+function clientScore(clientId){
   const items=ITEMS.filter(i=>i.cli===clientId);
+  if(!items.length)return 100;
   let total=0,flags=0;
   items.forEach(it=>{
-    const m=calcMetrics(ediData[it.id],cfg);
+    const m=calcMetrics(EDI_DATA[it.id],CFG[it.cli]||DEFAULT_CFG);
     if(!m)return;
     Object.values(m).forEach(v=>{total++;if(v.flag)flags++;});
   });
   return total>0?Math.round((1-flags/total)*100):100;
 }
 
-// ── STATE ──────────────────────────────────────────────────
-let EDI_DATA=buildAllEDI();
-let CFG={"RNT":{...DEFAULT_CFG},"STL":{...DEFAULT_CFG,service:98},"VLO":{...DEFAULT_CFG,biasWarn:8}};
-let SS=JSON.parse(JSON.stringify(SS_DATA));
-
-let S={
-  step:"home",       // home | import | verify | alerts | analyse | client | share
-  importedFiles:[],
-  lastImport:null,
-  importResult:null,
-  selectedItem:ITEMS[0].id,
-  selectedClient:"RNT",
-  searchQuery:"",
-  searchClientFilter:"all",
-  alertFilter:"all",  // all | frozen | slushy | liquid
-  showHelp:false,
-  lang:"fr",
-  toast:null,
-};
-
-function go(step,extra={}){Object.assign(S,{step,...extra});render();}
-function update(patch){Object.assign(S,patch);render();}
-
-function showToast(msg,icon="ti-circle-check",ms=3000){
-  S.toast={msg,icon};render();
-  setTimeout(()=>{S.toast=null;render();},ms);
-}
-
-// ── COMPUTED ──────────────────────────────────────────────
+// ── COMPUTED ALERTS ───────────────────────────────────────
 function getAllAlerts(){
+  if(ALERTS_CACHE)return ALERTS_CACHE;
   const alerts=[];
   ITEMS.forEach(it=>{
     const cfg=CFG[it.cli]||DEFAULT_CFG;
     const m=calcMetrics(EDI_DATA[it.id],cfg);
     if(!m)return;
     const recs=EDI_DATA[it.id];
-    const gaps=detectGaps(recs[recs.length-1]);
+    const lastRec=recs[recs.length-1];
+    const gaps=lastRec?detectGaps(lastRec):[];
     Object.entries(m).forEach(([z,v])=>{
       if(v.flag)alerts.push({item:it,zone:z,...v,type:"drift"});
     });
     if(gaps.length>0)alerts.push({item:it,zone:"gap",gaps,type:"gap",flag:true});
   });
+  // Priorité : frozen > slushy > gap > liquid
+  const order={frozen:0,slushy:1,gap:2,liquid:3};
+  alerts.sort((a,b)=>(order[a.zone]||3)-(order[b.zone]||3));
+  ALERTS_CACHE=alerts;
   return alerts;
 }
 
@@ -333,22 +451,77 @@ function getLastImportDate(){
   let latest=null;
   ITEMS.forEach(it=>{
     const recs=EDI_DATA[it.id];
-    if(recs.length){
-      const d=recs[recs.length-1].date;
+    if(recs&&recs.length){
+      // Parse DD/MM/YYYY correctement
+      const raw=recs[recs.length-1].date;
+      const parts=raw.split(/[\/\-]/);
+      let d;
+      if(parts.length===3){
+        // Essayer DD/MM/YYYY
+        d=new Date(+parts[2],+parts[1]-1,+parts[0]);
+        if(isNaN(d))d=new Date(raw);
+      } else d=new Date(raw);
       if(!latest||d>latest)latest=d;
     }
   });
-  return latest;
+  if(!latest)return null;
+  return latest.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric"});
+}
+
+// ── STATE MANAGEMENT ──────────────────────────────────────
+function go(step,extra={}){
+  ALERTS_CACHE=null;
+  Object.assign(S,{step,...extra});
+  render();
+}
+function update(patch){Object.assign(S,patch);render();}
+
+function showToast(msg,icon="ti-circle-check",ms=3500){
+  S.toast={msg,icon};render();
+  setTimeout(()=>{S.toast=null;render();},ms);
 }
 
 // ── RENDER ────────────────────────────────────────────────
 function render(){
   const app=document.getElementById("app");
   app.innerHTML=renderTopBar()+renderStepsBar()+
-    `<div class="main">${renderStep()}</div>`+
+    `<div class="main">`+
+      (S.gasError?renderGASError():"")+ 
+      (!GS_CONNECTED&&!S.gasError?renderConnectBanner():"")+
+      renderStep()+
+    `</div>`+
     (S.toast?renderToast():"")+
-    renderHelpModal();
+    renderHelpModal()+
+    renderConfigModal();
   attachEvents();
+}
+
+function renderGASError(){
+  return`<div style="background:#FEE2E2;border:1px solid #FCA5A5;border-radius:10px;padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px">
+    <i class="ti ti-alert-circle" style="color:#EF4444;font-size:20px;flex-shrink:0"></i>
+    <div>
+      <div style="font-weight:700;color:#991B1B;font-size:13px">Erreur de connexion Google Sheets</div>
+      <div style="font-size:12px;color:#7F1D1D;margin-top:2px">${S.gasError}</div>
+    </div>
+    <button class="btn btn-danger btn-sm" style="margin-left:auto" onclick="loadFromGAS()">Réessayer</button>
+    <button class="btn btn-ghost btn-sm" onclick="update({showConfig:true,gasError:null})">Modifier l'URL</button>
+  </div>`;
+}
+
+function renderConnectBanner(){
+  return`<div style="background:#EFF9FF;border:1px solid #BAE6FD;border-radius:10px;padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px">
+    <i class="ti ti-database-off" style="color:#0284C7;font-size:24px;flex-shrink:0"></i>
+    <div>
+      <div style="font-weight:700;color:#0B1F3A;font-size:13px">Connecter Google Sheets</div>
+      <div style="font-size:12px;color:#0369A1;margin-top:2px">Cliquez sur Connecter GS pour charger les données depuis votre Google Sheet OPTIPLAN</div>
+    </div>
+    <button class="btn btn-accent" style="margin-left:auto;flex-shrink:0" onclick="loadFromGAS()">
+      <i class="ti ti-plug-connected"></i> Connecter GS
+    </button>
+    <button class="btn btn-ghost btn-sm" onclick="update({showConfig:true})">
+      <i class="ti ti-settings"></i> Modifier URL
+    </button>
+  </div>`;
 }
 
 // ── TOPBAR ────────────────────────────────────────────────
@@ -358,30 +531,41 @@ function renderTopBar(){
     <div class="topbar-sep"></div>
     <span style="color:#94a3b8;font-size:12px">Demand Governance · Module 1</span>
     <div class="topbar-right">
+      <div class="flex gap-4" style="gap:6px">
+        <div class="gs-dot${GS_CONNECTED?" connected":""}"></div>
+        <span style="font-size:11px;color:${GS_CONNECTED?"#10B981":"#EF4444"};font-weight:600">
+          ${GS_CONNECTED?"Google Sheets connecté":"Non connecté"}
+        </span>
+      </div>
+      <button class="topbar-btn" onclick="loadFromGAS()" title="Rafraîchir depuis GS" ${GS_LOADING?"disabled":""}>
+        <i class="ti ti-refresh${GS_LOADING?" ti-spin":""}"></i>
+        ${GS_LOADING?"Chargement...":"Synchroniser"}
+      </button>
       <button class="topbar-btn${S.showHelp?" active":""}" onclick="update({showHelp:!S.showHelp})">
-        <i class="ti ti-book-2"></i> APICS Help
+        <i class="ti ti-book-2"></i> APICS
+      </button>
+      <button class="topbar-btn${S.showConfig?" active":""}" onclick="update({showConfig:!S.showConfig})">
+        <i class="ti ti-settings"></i>
       </button>
       <button class="topbar-btn" onclick="showEmailModal()">
         <i class="ti ti-mail-forward"></i> Partager
       </button>
-      <div style="width:32px;height:32px;border-radius:50%;background:#1e3a5f;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:13px;font-weight:700">
-        ADV
-      </div>
+      <div style="width:32px;height:32px;border-radius:50%;background:#1e3a5f;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:13px;font-weight:700">ADV</div>
     </div>
   </div>`;
 }
 
 // ── STEPS BAR ─────────────────────────────────────────────
 function renderStepsBar(){
-  const alerts=getAllAlerts();
+  const alerts=GS_CONNECTED?getAllAlerts():[];
   const steps=[
-    {id:"home",    icon:"ti-home-2",       label:"Accueil"},
-    {id:"import",  icon:"ti-upload",        label:"1 · Importer EDI"},
-    {id:"verify",  icon:"ti-clipboard-check",label:"2 · Vérifier"},
-    {id:"alerts",  icon:"ti-alert-triangle",label:`3 · Alertes${alerts.length>0?" ("+alerts.length+")":""}`,hasAlert:alerts.length>0},
-    {id:"analyse", icon:"ti-zoom-in",       label:"4 · Analyser"},
+    {id:"home",    icon:"ti-home-2",            label:"Accueil"},
+    {id:"import",  icon:"ti-upload",             label:"1 · Importer EDI"},
+    {id:"verify",  icon:"ti-clipboard-check",   label:"2 · Vérifier"},
+    {id:"alerts",  icon:"ti-alert-triangle",    label:`3 · Alertes${alerts.length>0?" ("+alerts.length+")":""}`,hasAlert:alerts.length>0},
+    {id:"analyse", icon:"ti-zoom-in",            label:"4 · Analyser"},
     {id:"client",  icon:"ti-building-factory-2",label:"5 · Vue Client T1"},
-    {id:"share",   icon:"ti-share",         label:"6 · Partager"},
+    {id:"share",   icon:"ti-share",              label:"6 · Partager"},
   ];
   return`<div class="steps-bar">
     ${steps.map((st,i)=>{
@@ -398,46 +582,59 @@ function renderStepsBar(){
   </div>`;
 }
 
-// ── HOME ──────────────────────────────────────────────────
+// ── HOME ─────────────────────────────────────────────────
 function renderHome(){
+  if(!GS_CONNECTED){
+    return`<div class="card" style="text-align:center;padding:60px 40px;border-style:dashed">
+      <i class="ti ti-cloud-off" style="font-size:56px;color:#CBD5E1;display:block;margin-bottom:16px"></i>
+      <div style="font-size:20px;font-weight:800;color:#1E293B;margin-bottom:8px">Bienvenue sur OPTIPLAN</div>
+      <div style="font-size:14px;color:#64748B;margin-bottom:24px;max-width:400px;margin-left:auto;margin-right:auto">
+        Connectez votre Google Sheet OPTIPLAN pour accéder aux programmes EDI et calculer les métriques en temps réel.
+      </div>
+      <button class="btn btn-accent btn-lg" onclick="loadFromGAS()">
+        <i class="ti ti-plug-connected"></i> Connecter Google Sheets
+      </button>
+    </div>`;
+  }
+
   const alerts=getAllAlerts();
   const lastDate=getLastImportDate();
-  const lastRec=EDI_DATA[ITEMS[0].id];
-  const lastId=lastRec.length?lastRec[lastRec.length-1].id:"—";
+  const firstRef=ITEMS.length?ITEMS[0]:null;
+  const lastId=firstRef&&EDI_DATA[firstRef.id]?.length
+    ?EDI_DATA[firstRef.id][EDI_DATA[firstRef.id].length-1].id:"—";
 
   return`
-  <!-- ACCUEIL HERO -->
   <div class="card mb-16" style="background:linear-gradient(135deg,#0B1F3A 60%,#1A4A8A);color:#fff;border:none">
     <div class="flex-between">
       <div>
         <div style="font-size:12px;color:#94a3b8;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">
-          Bonjour — ${new Date().toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"})}
+          ${new Date().toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"})}
         </div>
         <div style="font-size:22px;font-weight:800;margin-bottom:4px">Tableau de bord ADV</div>
         <div style="font-size:13px;color:#94a3b8">
-          Dernier programme reçu : <strong style="color:#00A8E8">${lastId}</strong> · ${lastDate||"—"}
+          Dernier programme : <strong style="color:#00A8E8">${lastId}</strong> · ${lastDate||"—"}
+          <span style="margin-left:12px;background:#10B98133;color:#10B981;padding:2px 8px;border-radius:4px;font-size:11px">
+            <i class="ti ti-circle-check"></i> Google Sheets connecté
+          </span>
         </div>
       </div>
       <div class="flex gap-8">
         <button class="btn btn-accent btn-lg" onclick="go('import')">
           <i class="ti ti-upload"></i> Importer un EDI
         </button>
-        ${alerts.length>0?`<button class="btn btn-danger btn-lg" onclick="go('alerts')">
-          <i class="ti ti-alert-triangle"></i> ${alerts.length} alerte${alerts.length>1?"s":""}
-        </button>`:`<button class="btn btn-success btn-lg" onclick="go('verify')">
-          <i class="ti ti-circle-check"></i> Tout est OK
-        </button>`}
+        ${alerts.length>0
+          ?`<button class="btn btn-danger btn-lg" onclick="go('alerts')"><i class="ti ti-alert-triangle"></i> ${alerts.length} alerte${alerts.length>1?"s":""}</button>`
+          :`<button class="btn btn-success btn-lg" onclick="go('verify')"><i class="ti ti-circle-check"></i> Tout est OK</button>`}
       </div>
     </div>
   </div>
 
-  <!-- KPIs RAPIDES -->
   <div class="grid-4 mb-16">
     ${[
       {label:"Références suivies",val:ITEMS.length,icon:"ti-packages",color:C.blue,sub:"actives"},
       {label:"Clients T1",val:CLIENTS.length,icon:"ti-building-factory-2",color:C.accent,sub:"programmes actifs"},
       {label:"Alertes actives",val:alerts.length,icon:"ti-alert-triangle",color:alerts.length>0?C.danger:C.ok,sub:alerts.length>0?"action requise":"aucune dérive"},
-      {label:"Réceptions archivées",val:ITEMS.length*6,icon:"ti-history",color:C.teal,sub:"dans l'historique"},
+      {label:"Réceptions archivées",val:Object.values(EDI_DATA).reduce((a,r)=>a+r.length,0),icon:"ti-history",color:C.teal,sub:"dans l'historique"},
     ].map(k=>`<div class="kpi">
       <div style="color:${k.color};margin-bottom:6px"><i class="ti ${k.icon}" style="font-size:22px"></i></div>
       <div class="kpi-val" style="color:${k.color}">${k.val}</div>
@@ -446,18 +643,17 @@ function renderHome(){
     </div>`).join("")}
   </div>
 
-  <!-- STATUT PAR CLIENT -->
-  <div class="grid-3 mb-16">
+  ${CLIENTS.length?`<div class="grid-3 mb-16">
     ${CLIENTS.map(cl=>{
-      const score=clientScore(cl.id,EDI_DATA,CFG[cl.id]||DEFAULT_CFG);
+      const score=clientScore(cl.id);
       const scoreColor=score>=85?C.ok:score>=65?C.warn:C.danger;
       const clientItems=ITEMS.filter(i=>i.cli===cl.id);
       const clientAlerts=getAllAlerts().filter(a=>a.item.cli===cl.id);
       return`<div class="card-sm" style="cursor:pointer" onclick="go('client',{selectedClient:'${cl.id}'})">
         <div class="flex-between mb-8">
           <div>
-            <div style="font-size:13px;font-weight:700;color:${cl.color}">${cl.label}</div>
-            <div class="text-xs text-muted">${clientItems.length} réf · ${cl.freq}</div>
+            <div style="font-size:13px;font-weight:700;color:${cl.color||C.blue}">${cl.label}</div>
+            <div class="text-xs text-muted">${clientItems.length} réf · ${cl.freq||"hebdo"}</div>
           </div>
           <div class="score-ring" style="border-color:${scoreColor};width:52px;height:52px;border-width:4px">
             <div style="font-size:16px;font-weight:800;color:${scoreColor}">${score}</div>
@@ -470,20 +666,15 @@ function renderHome(){
         <div class="text-xs text-muted mt-4">Score qualité EDI</div>
       </div>`;
     }).join("")}
-  </div>
+  </div>`:""}
 
-  <!-- RECHERCHE RAPIDE -->
   <div class="card">
     <div class="flex-between mb-16">
-      <div>
-        <div class="card-title">Recherche rapide</div>
-        <div class="card-sub">Rechercher une référence ou un client T1</div>
-      </div>
+      <div><div class="card-title">Recherche rapide</div><div class="card-sub">Référence, désignation, famille</div></div>
     </div>
     <div class="search-box mb-16" style="max-width:400px">
       <i class="ti ti-search"></i>
-      <input type="text" placeholder="N° article, désignation, PN client..." 
-        value="${S.searchQuery}" id="homeSearch" oninput="update({searchQuery:this.value})">
+      <input type="text" placeholder="N° article, désignation..." value="${S.searchQuery}" id="homeSearch" oninput="update({searchQuery:this.value})">
       ${S.searchQuery?`<button onclick="update({searchQuery:''})" style="background:none;border:none;color:#94A3B8;cursor:pointer"><i class="ti ti-x"></i></button>`:""}
     </div>
     ${S.searchQuery.length>1?renderSearchResults():`
@@ -500,24 +691,22 @@ function renderSearchResults(){
   const results=ITEMS.filter(it=>
     it.id.toLowerCase().includes(q)||
     it.label.toLowerCase().includes(q)||
-    it.pn.toLowerCase().includes(q)||
-    it.famille.toLowerCase().includes(q)
+    (it.famille||"").toLowerCase().includes(q)
   );
   if(!results.length)return`<div style="text-align:center;padding:20px;color:#94A3B8;font-size:13px">Aucun résultat pour "${S.searchQuery}"</div>`;
   return`<table class="tbl">
-    <thead><tr><th>Référence</th><th>Désignation</th><th>PN Client</th><th>Client T1</th><th>Famille</th><th>Statut</th><th></th></tr></thead>
+    <thead><tr><th>Référence</th><th>Désignation</th><th>Client T1</th><th>Famille</th><th>Statut</th><th></th></tr></thead>
     <tbody>
       ${results.map(it=>{
         const cfg=CFG[it.cli]||DEFAULT_CFG;
         const m=calcMetrics(EDI_DATA[it.id],cfg);
         const hasFlag=m&&Object.values(m).some(v=>v.flag);
-        const cl=CLIENTS.find(c=>c.id===it.cli);
+        const cl=CLIENTS.find(c=>c.id===it.cli)||{label:it.cli,color:C.blue};
         return`<tr class="${hasFlag?"alert-row":""}">
           <td class="fw-700" style="color:${C.blue};font-family:monospace">${it.id}</td>
           <td>${it.label}</td>
-          <td style="font-family:monospace;font-size:11px;color:#64748B">${it.pn}</td>
-          <td><span style="color:${cl.color};font-weight:600">${cl.label}</span></td>
-          <td><span class="badge badge-neutral">${it.famille}</span></td>
+          <td><span style="color:${cl.color||C.blue};font-weight:600">${cl.label}</span></td>
+          <td><span class="badge badge-neutral">${it.famille||"—"}</span></td>
           <td>${hasFlag?`<span class="badge badge-danger"><i class="ti ti-alert-triangle"></i> Alerte</span>`:`<span class="badge badge-ok">OK</span>`}</td>
           <td><button class="btn btn-ghost btn-sm" onclick="go('analyse',{selectedItem:'${it.id}'})">Analyser →</button></td>
         </tr>`;
@@ -533,7 +722,7 @@ function renderImport(){
     <div>
       <div class="card mb-16">
         <div class="card-title"><i class="ti ti-file-spreadsheet" style="color:${C.accent};margin-right:6px"></i>Import programme EDI (CSV)</div>
-        <div class="card-sub">Glisser-déposer votre fichier · Format OPTIPLAN v1.0 · Séparateur ;</div>
+        <div class="card-sub">Glisser-déposer · Format OPTIPLAN v1.0 · Séparateur ;</div>
         <div class="drop-zone" id="dropEDI" onclick="document.getElementById('fileEDI').click()">
           <i class="ti ti-cloud-upload" style="font-size:36px;color:#CBD5E1;display:block;margin-bottom:12px"></i>
           <div style="font-size:14px;font-weight:600;color:#475569;margin-bottom:4px">Déposer le fichier EDI ici</div>
@@ -549,8 +738,8 @@ function renderImport(){
       </div>
 
       <div class="card">
-        <div class="card-title"><i class="ti ti-package" style="color:${C.teal};margin-right:6px"></i>Import Item Master — SS actuel</div>
-        <div class="card-sub">Fichier CSV : REFERENCE ; SS_ACTUEL ; UOM</div>
+        <div class="card-title"><i class="ti ti-package" style="color:${C.teal};margin-right:6px"></i>Item Master — SS actuel</div>
+        <div class="card-sub">CSV : REFERENCE ; SS_ACTUEL ; UOM</div>
         <div class="drop-zone" id="dropMaster" onclick="document.getElementById('fileMaster').click()" style="padding:20px">
           <i class="ti ti-database-import" style="font-size:28px;color:#CBD5E1;display:block;margin-bottom:8px"></i>
           <div style="font-size:13px;font-weight:600;color:#475569">Fichier Item Master</div>
@@ -570,19 +759,30 @@ RECEPTION_NUM;R07
 
 REFERENCE;DESIGNATION;CLIENT_CODE;CLIENT_LABEL;BUCKET;UOM;ZONE_S1_S2;ZONE_S3_S5;ZONE_S6_S12;S1;S2;S3;...;S12
 7700432156;Support Berceau Moteur AV;RNT;Renault T1;SEMAINE;PCS;FROZEN;SLUSHY;LIQUID;820;840;...</pre>
+        <div style="margin-top:10px;font-size:11px;color:#64748B">
+          <i class="ti ti-info-circle" style="margin-right:4px;color:${C.accent}"></i>
+          Les références doivent exister dans Google Sheets (feuille ITEMS)
+        </div>
       </div>
 
       <div id="importPreview" class="mb-16"></div>
 
       <div id="importActionBtn" style="display:none">
-        <button class="btn btn-accent btn-lg" style="width:100%" onclick="doImport()">
-          <i class="ti ti-database-import"></i> Importer dans OPTIPLAN
+        <button class="btn btn-accent btn-lg" style="width:100%;margin-bottom:8px" onclick="doImport()" ${!GS_CONNECTED?"disabled":""}>
+          <i class="ti ti-database-import"></i> ${GS_CONNECTED?"Importer dans Google Sheets":"Connectez d'abord Google Sheets"}
         </button>
+        ${!GS_CONNECTED?`<div style="font-size:11px;color:#EF4444;text-align:center">
+          <i class="ti ti-alert-triangle"></i> Connexion GS requise pour sauvegarder les données
+        </div>`:""}
       </div>
-      <div id="importSuccessMsg" style="display:none" class="card" style="background:#F0FDF4;border-color:#10B981">
-        <div style="color:#10B981;font-weight:700;display:flex;align-items:center;gap:8px">
-          <i class="ti ti-circle-check" style="font-size:20px"></i>
-          Import réalisé — <button class="btn btn-success btn-sm" onclick="go('verify')">Vérifier →</button>
+
+      <div id="importSuccessMsg" style="display:none">
+        <div class="card" style="background:#F0FDF4;border-color:#10B981">
+          <div style="color:#10B981;font-weight:700;display:flex;align-items:center;gap:8px">
+            <i class="ti ti-circle-check" style="font-size:20px"></i>
+            Import réalisé —
+            <button class="btn btn-success btn-sm" onclick="go('verify')">Vérifier →</button>
+          </div>
         </div>
       </div>
     </div>
@@ -591,28 +791,30 @@ REFERENCE;DESIGNATION;CLIENT_CODE;CLIENT_LABEL;BUCKET;UOM;ZONE_S1_S2;ZONE_S3_S5;
 
 // ── STEP 2: VERIFY ────────────────────────────────────────
 function renderVerify(){
+  if(!GS_CONNECTED)return renderNotConnected();
   const allAlerts=getAllAlerts();
   const totalRefs=ITEMS.length;
-  const alertRefs=[...new Set(allAlerts.filter(a=>a.type==="drift").map(a=>a.item.id))].length;
-  const gapRefs=allAlerts.filter(a=>a.type==="gap");
-  const okRefs=totalRefs-alertRefs-gapRefs.length;
+  // Un Set des refs avec dérive (évite le double-comptage)
+  const driftRefs=new Set(allAlerts.filter(a=>a.type==="drift").map(a=>a.item.id));
+  const gapRefs=new Set(allAlerts.filter(a=>a.type==="gap").map(a=>a.item.id));
+  const anomalyRefs=new Set([...driftRefs,...gapRefs]);
+  const okRefs=totalRefs-anomalyRefs.size;
 
   return`
-  <!-- SYNTHÈSE IMPORTATION -->
   <div class="card mb-16" style="border-left:4px solid ${allAlerts.length>0?C.warn:C.ok}">
     <div class="flex-between mb-16">
       <div>
         <div class="card-title">Rapport de réception — ${new Date().toLocaleDateString("fr-FR")}</div>
-        <div class="card-sub">Vérification automatique de l'intégrité du programme reçu</div>
+        <div class="card-sub">Vérification automatique · Données depuis Google Sheets</div>
       </div>
       <button class="btn btn-ghost btn-sm" onclick="go('alerts')">Voir les alertes →</button>
     </div>
     <div class="grid-4">
       ${[
         {icon:"ti-packages",label:"Références reçues",val:totalRefs,color:C.blue,bg:"#DBEAFE"},
-        {icon:"ti-circle-check",label:"Sans anomalie",val:okRefs,color:C.ok,bg:"#D1FAE5"},
-        {icon:"ti-alert-triangle",label:"Dérives détectées",val:alertRefs,color:C.danger,bg:"#FEE2E2"},
-        {icon:"ti-layout-grid-remove",label:"Vides programme",val:gapRefs.length,color:C.warn,bg:"#FEF3C7"},
+        {icon:"ti-circle-check",label:"Sans anomalie",val:Math.max(0,okRefs),color:C.ok,bg:"#D1FAE5"},
+        {icon:"ti-alert-triangle",label:"Dérives détectées",val:driftRefs.size,color:C.danger,bg:"#FEE2E2"},
+        {icon:"ti-layout-grid-remove",label:"Vides programme",val:gapRefs.size,color:C.warn,bg:"#FEF3C7"},
       ].map(k=>`<div style="background:${k.bg};border-radius:10px;padding:14px;text-align:center">
         <i class="ti ${k.icon}" style="font-size:24px;color:${k.color};display:block;margin-bottom:6px"></i>
         <div style="font-size:24px;font-weight:800;color:${k.color}">${k.val}</div>
@@ -621,9 +823,9 @@ function renderVerify(){
     </div>
   </div>
 
-  <!-- TABLEAU DE VÉRIFICATION ── -->
   <div class="card">
-    <div class="card-title mb-16">Détail par référence — Programme reçu vs Programme t-1</div>
+    <div class="card-title mb-16">Détail par référence — Programme reçu vs t-1</div>
+    ${!ITEMS.length?`<div style="text-align:center;padding:24px;color:#94A3B8">Aucune référence dans Google Sheets. Exécutez setupSheets() dans l'éditeur Apps Script.</div>`:`
     <table class="tbl">
       <thead><tr>
         <th>Référence</th><th>Désignation</th><th>Client T1</th>
@@ -633,55 +835,57 @@ function renderVerify(){
       <tbody>
         ${ITEMS.map(it=>{
           const cfg=CFG[it.cli]||DEFAULT_CFG;
-          const recs=EDI_DATA[it.id];
+          const recs=EDI_DATA[it.id]||[];
           const m=calcMetrics(recs,cfg);
-          const gaps=detectGaps(recs[recs.length-1]);
-          const cl=CLIENTS.find(c=>c.id===it.cli);
+          const lastRec=recs[recs.length-1];
+          const gaps=lastRec?detectGaps(lastRec):[];
+          const cl=CLIENTS.find(c=>c.id===it.cli)||{label:it.cli,color:C.blue};
           const hasFlag=m&&Object.values(m).some(v=>v.flag);
           const hasGap=gaps.length>0;
+          const noData=recs.length<2;
 
           function zoneCell(z){
+            if(noData)return`<td style="color:#94A3B8;font-size:11px">< 2 réceptions</td>`;
             if(!m)return`<td>—</td>`;
             const v=m[z];
-            const ok=!v.flag;
             return`<td>
-              <div style="font-weight:700;color:${v.flag?C.danger:C.ok};font-size:12px">
-                ${v.flag?`🚨`:`✓`} TS: ${v.ts}
-              </div>
+              <div style="font-weight:700;color:${v.flag?C.danger:C.ok};font-size:12px">${v.flag?"🚨":"✓"} TS: ${v.ts}</div>
               <div style="font-size:10px;color:#64748B">Biais: ${v.biasPct>0?"+":""}${v.biasPct}%</div>
             </td>`;
           }
 
-          return`<tr class="${hasFlag||hasGap?"alert-row":""}">
+          return`<tr class="${(hasFlag||hasGap)&&!noData?"alert-row":""}">
             <td class="fw-700" style="color:${C.blue};font-family:monospace;font-size:12px">${it.id}</td>
             <td style="font-size:12px">${it.label}</td>
-            <td><span style="color:${cl.color};font-weight:600;font-size:11px">${cl.label}</span></td>
+            <td><span style="color:${cl.color||C.blue};font-weight:600;font-size:11px">${cl.label}</span></td>
             ${zoneCell("frozen")}${zoneCell("slushy")}${zoneCell("liquid")}
-            <td>${hasGap?`<span class="badge badge-warn"><i class="ti ti-alert-triangle"></i> S${gaps.join(",S")}</span>`:`<span style="color:${C.ok};font-size:12px">✓ Complet</span>`}</td>
-            <td>${hasFlag||hasGap?`<span class="badge badge-danger">Anomalie</span>`:`<span class="badge badge-ok">OK</span>`}</td>
+            <td>${hasGap?`<span class="badge badge-warn"><i class="ti ti-alert-triangle"></i> ${gaps.join(",")}</span>`:`<span style="color:${C.ok};font-size:12px">✓</span>`}</td>
+            <td>${noData?`<span class="badge badge-neutral">Pas d'histor.</span>`:hasFlag||hasGap?`<span class="badge badge-danger">Anomalie</span>`:`<span class="badge badge-ok">OK</span>`}</td>
             <td><button class="btn btn-ghost btn-sm" onclick="go('analyse',{selectedItem:'${it.id}'})"><i class="ti ti-zoom-in"></i></button></td>
           </tr>`;
         }).join("")}
       </tbody>
-    </table>
+    </table>`}
   </div>`;
 }
 
 // ── STEP 3: ALERTS ────────────────────────────────────────
 function renderAlerts(){
+  if(!GS_CONNECTED)return renderNotConnected();
   const allAlerts=getAllAlerts();
   const filtered=S.alertFilter==="all"?allAlerts:allAlerts.filter(a=>a.zone===S.alertFilter);
 
   return`
   <div class="flex-between mb-16">
     <div>
-      <div style="font-size:18px;font-weight:800">${allAlerts.length} alerte${allAlerts.length>1?"s":""} détectée${allAlerts.length>1?"s":""}</div>
+      <div style="font-size:18px;font-weight:800">${allAlerts.length} alerte${allAlerts.length!==1?"s":""} détectée${allAlerts.length!==1?"s":""}</div>
       <div class="text-sm text-muted">Classées par priorité · Zone Figée en premier</div>
     </div>
-    <div class="flex gap-8">
+    <div class="flex gap-8" style="flex-wrap:wrap">
       ${["all","frozen","slushy","liquid","gap"].map(f=>{
         const labels={all:"Toutes",frozen:"Zone Figée",slushy:"Semi-figée",liquid:"Flexible",gap:"Vides"};
-        const counts={all:allAlerts.length,frozen:allAlerts.filter(a=>a.zone==="frozen").length,
+        const counts={all:allAlerts.length,
+          frozen:allAlerts.filter(a=>a.zone==="frozen").length,
           slushy:allAlerts.filter(a=>a.zone==="slushy").length,
           liquid:allAlerts.filter(a=>a.zone==="liquid").length,
           gap:allAlerts.filter(a=>a.zone==="gap").length};
@@ -699,10 +903,11 @@ function renderAlerts(){
   ${filtered.length===0?`<div class="card" style="text-align:center;padding:40px">
     <i class="ti ti-circle-check" style="font-size:48px;color:${C.ok};display:block;margin-bottom:12px"></i>
     <div style="font-size:16px;font-weight:700;color:${C.ok}">Aucune alerte dans cette zone</div>
+    ${allAlerts.length===0?`<div class="text-sm text-muted mt-4">Importez au moins 2 réceptions EDI pour calculer les métriques</div>`:""}
   </div>`:""}
 
   ${filtered.map((a,i)=>{
-    const cl=CLIENTS.find(c=>c.id===a.item.cli);
+    const cl=CLIENTS.find(c=>c.id===a.item.cli)||{label:a.item.cli,color:C.blue};
     const zoneClass=a.zone==="frozen"?"frozen":a.zone==="slushy"?"slushy":a.zone==="gap"?"gap":"liquid";
     const zoneLabel=a.zone==="frozen"?"Zone Figée (S1-S2)":a.zone==="slushy"?"Zone Semi-figée (S3-S5)":a.zone==="liquid"?"Zone Flexible (S6-S12)":"Vides programme";
     const priority=a.zone==="frozen"?"PRIORITÉ HAUTE":a.zone==="slushy"?"PRIORITÉ MOYENNE":a.zone==="gap"?"À COMPLÉTER":"SURVEILLER";
@@ -713,7 +918,7 @@ function renderAlerts(){
         <div class="flex gap-8">
           <span style="background:${priorityColor};color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px">${priority}</span>
           <span class="zone-chip zone-${a.zone==="gap"?"frozen":a.zone}">${zoneLabel}</span>
-          <span style="color:${cl.color};font-weight:700;font-size:12px">${cl.label}</span>
+          <span style="color:${cl.color||C.blue};font-weight:700;font-size:12px">${cl.label}</span>
         </div>
         <div class="flex gap-8">
           <button class="btn btn-ghost btn-sm" onclick="go('analyse',{selectedItem:'${a.item.id}'})">
@@ -731,7 +936,7 @@ function renderAlerts(){
       ${a.type==="gap"?`
         <div style="font-size:13px;color:#64748B">
           <i class="ti ti-layout-grid-remove" style="color:#8B5CF6;margin-right:4px"></i>
-          Semaines sans programme : <strong style="color:#8B5CF6">${a.gaps.map(g=>"S"+g).join(", ")}</strong>
+          Semaines sans programme : <strong style="color:#8B5CF6">${a.gaps.join(", ")}</strong>
           — Vérifier avec le client T1 avant planification MPS
         </div>
       `:`
@@ -747,44 +952,45 @@ function renderAlerts(){
         </div>
         <div style="font-size:12px;color:#64748B;background:#fff;border-radius:6px;padding:8px 12px;border:1px solid #E2E8F0">
           <strong>Impact :</strong>
-          ${a.zone==="frozen"?`Confirmation commande S0 en ${a.direction.toLowerCase()} → risque ${a.cum>0?"transport exceptionnel / surstock":"rupture production"}`
-            :a.zone==="slushy"?`Dérive ${a.direction.toLowerCase()} en Semi-figé → impact PDP et calcul MRP semaines S3-S5`
-            :`Tendance ${a.direction.toLowerCase()} en Flexible → réviser stock de sécurité et approvisionnements`}
+          ${a.zone==="frozen"
+            ?`Confirmation commande S0 en ${a.direction.toLowerCase()} → risque ${a.cum>0?"transport exceptionnel / surstock":"rupture production"}`
+            :a.zone==="slushy"
+              ?`Dérive ${a.direction.toLowerCase()} en Semi-figé → impact PDP et calcul MRP semaines S3-S5`
+              :`Tendance ${a.direction.toLowerCase()} en Flexible → réviser stock de sécurité et approvisionnements`}
         </div>
       `}
     </div>`;
   }).join("")}
 
   ${allAlerts.length>0?`<div class="flex mt-16 gap-8">
-    <button class="btn btn-primary" onclick="go('share')">
-      <i class="ti ti-mail-forward"></i> Envoyer le rapport aux équipes
-    </button>
-    <button class="btn btn-ghost" onclick="go('verify')">
-      ← Retour vérification
-    </button>
+    <button class="btn btn-primary" onclick="go('share')"><i class="ti ti-mail-forward"></i> Envoyer le rapport</button>
+    <button class="btn btn-ghost" onclick="go('verify')">← Retour vérification</button>
   </div>`:""}`;
 }
 
 // ── STEP 4: ANALYSE ───────────────────────────────────────
 function renderAnalyse(){
+  if(!GS_CONNECTED)return renderNotConnected();
+  if(!ITEMS.length)return`<div class="card" style="text-align:center;padding:40px;color:#94A3B8">Aucune référence chargée depuis Google Sheets.</div>`;
+
   const it=ITEMS.find(i=>i.id===S.selectedItem)||ITEMS[0];
   const cfg=CFG[it.cli]||DEFAULT_CFG;
-  const recs=EDI_DATA[it.id];
+  const recs=EDI_DATA[it.id]||[];
   const m=calcMetrics(recs,cfg);
   const p=classifyDemand(recs);
-  const cl=CLIENTS.find(c=>c.id===it.cli);
+  const cl=CLIENTS.find(c=>c.id===it.cli)||{label:it.cli,color:C.blue};
   const avgMad=avgMadFromMetrics(m);
   const ss=calcSS(avgMad,cfg.service);
   const ssAct=SS[it.id]?.ss||0;
   const gap=ss-ssAct;
-  const last=recs[recs.length-1];
-  const prev=recs[recs.length-2];
+  const last=recs.length?recs[recs.length-1]:null;
+  const prev=recs.length>1?recs[recs.length-2]:null;
+  const LCOLORS=["#CBD5E1","#94A3B8","#60A5FA","#00A8E8","#00C9B1","#1A4A8A"];
 
-  // SVG Graphe
+  // SVG
   const svgW=600,svgH=180,pL=40,pR=10,pT=14,pB=24;
   const pw=svgW-pL-pR,ph=svgH-pT-pB;
-  const maxQ=Math.max(...recs.flatMap(r=>WEEKS.map(w=>r.qtys[w]||0)),1);
-  const LCOLORS=["#CBD5E1","#94A3B8","#60A5FA","#00A8E8","#00C9B1","#1A4A8A"];
+  const maxQ=recs.length?Math.max(...recs.flatMap(r=>WEEKS.map(w=>r.qtys[w]||0)),1):1;
   function px(i){return pL+i/(WEEKS.length-1)*pw;}
   function py(v){return pT+ph-(v/maxQ)*ph;}
   const gridLines=[0,.25,.5,.75,1].map(p=>{
@@ -796,46 +1002,41 @@ function renderAnalyse(){
   const lines_svg=recs.map((r,ri)=>{
     const pts=WEEKS.map((w,wi)=>`${px(wi)},${py(r.qtys[w]||0)}`).join(" ");
     const isLast=ri===recs.length-1;
-    return`<polyline points="${pts}" fill="none" stroke="${LCOLORS[ri]}" stroke-width="${isLast?2.5:1.2}" stroke-opacity="${isLast?1:0.5}" stroke-linejoin="round"/>`;
+    return`<polyline points="${pts}" fill="none" stroke="${LCOLORS[ri%LCOLORS.length]}" stroke-width="${isLast?2.5:1.2}" stroke-opacity="${isLast?1:0.5}" stroke-linejoin="round"/>`;
   }).join("");
   const wLabels=WEEKS.map((w,i)=>`<text x="${px(i)}" y="${svgH-4}" text-anchor="middle" font-size="8" fill="#94A3B8">${w}</text>`).join("");
 
   return`
-  <!-- SÉLECTEUR ARTICLE -->
   <div class="card mb-16">
     <div class="flex-between mb-8">
       <div class="card-title">Sélectionner une référence</div>
       <div class="search-box" style="width:300px">
         <i class="ti ti-search"></i>
-        <input type="text" placeholder="Rechercher..." id="analyseSearch" 
-          oninput="update({searchQuery:this.value})" value="${S.searchQuery}">
+        <input type="text" placeholder="Rechercher..." id="analyseSearch" oninput="update({searchQuery:this.value})" value="${S.searchQuery}">
       </div>
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:6px">
       ${ITEMS.filter(i=>!S.searchQuery||i.id.toLowerCase().includes(S.searchQuery.toLowerCase())||i.label.toLowerCase().includes(S.searchQuery.toLowerCase())).map(i=>{
         const hasF=calcMetrics(EDI_DATA[i.id],CFG[i.cli]||DEFAULT_CFG)&&Object.values(calcMetrics(EDI_DATA[i.id],CFG[i.cli]||DEFAULT_CFG)).some(v=>v.flag);
-        const isCl=CLIENTS.find(c=>c.id===i.cli);
         return`<button onclick="update({selectedItem:'${i.id}'})" style="
           background:${S.selectedItem===i.id?"#0B1F3A":"#F8FAFC"};
           color:${S.selectedItem===i.id?"#fff":"#1E293B"};
           border:1px solid ${S.selectedItem===i.id?"#0B1F3A":hasF?"#FCA5A5":"#E2E8F0"};
           border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600">
-          <span style="font-family:monospace">${i.id}</span>
-          ${hasF?`<span style="color:${S.selectedItem===i.id?"#FCA5A5":C.danger}"> !</span>`:""}
+          <span style="font-family:monospace">${i.id}</span>${hasF?`<span style="color:${S.selectedItem===i.id?"#FCA5A5":C.danger}"> !</span>`:""}
         </button>`;
       }).join("")}
     </div>
   </div>
 
-  <!-- EN-TÊTE ARTICLE -->
   <div class="card mb-16" style="background:#0B1F3A;color:#fff;border:none">
     <div class="flex-between">
       <div>
-        <div style="font-size:11px;color:${cl.color};font-weight:700;margin-bottom:4px">${cl.label} · ${it.pn}</div>
+        <div style="font-size:11px;color:${cl.color||C.accent};font-weight:700;margin-bottom:4px">${cl.label}</div>
         <div style="font-size:18px;font-weight:800">${it.label}</div>
         <div style="font-size:12px;color:#94a3b8;margin-top:4px">
           Réf. <span style="font-family:monospace;color:#00A8E8">${it.id}</span> · 
-          ${it.famille} · ${it.bucket==="week"?"Programme semaine":"Programme journalier"}
+          ${it.famille||"—"} · ${it.bucket==="week"?"Programme semaine":"Programme journalier"}
         </div>
       </div>
       <div class="flex gap-8">
@@ -854,8 +1055,13 @@ function renderAnalyse(){
     </div>
   </div>
 
+  ${recs.length<2?`<div class="card" style="text-align:center;padding:32px;color:#64748B">
+    <i class="ti ti-history" style="font-size:36px;display:block;margin-bottom:12px;color:#CBD5E1"></i>
+    <div style="font-weight:700;margin-bottom:4px">Minimum 2 réceptions requises</div>
+    <div class="text-sm">Importez au moins 2 fichiers EDI pour calculer les métriques de cette référence.</div>
+  </div>`:`
+
   <div class="grid-2 mb-16">
-    <!-- GRAPHE ÉVOLUTION -->
     <div class="card">
       <div class="card-title">Évolution des programmes reçus</div>
       <div class="card-sub">${recs.length} réceptions · trait épais = dernière</div>
@@ -870,16 +1076,15 @@ function renderAnalyse(){
       </svg>
       <div class="flex mt-8" style="flex-wrap:wrap;gap:6px">
         ${recs.map((r,i)=>`<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:#64748B">
-          <span style="width:16px;height:${i===recs.length-1?3:1.5}px;background:${LCOLORS[i]};display:inline-block;border-radius:2px"></span>
+          <span style="width:16px;height:${i===recs.length-1?3:1.5}px;background:${LCOLORS[i%LCOLORS.length]};display:inline-block;border-radius:2px"></span>
           ${r.id} · ${r.date}
         </span>`).join("")}
       </div>
     </div>
 
-    <!-- MAD PAR ZONE -->
     <div class="card">
-      <div class="card-title">MAD par zone — Variabilité de la demande</div>
-      <div class="card-sub">Base de calcul du Safety Stock · MAD = Σ|Δ programme| / n</div>
+      <div class="card-title">MAD par zone — Variabilité</div>
+      <div class="card-sub">MAD = Σ|Δ programme| / n · Base calcul SS</div>
       ${["frozen","slushy","liquid"].map(z=>{
         const wks=WEEKS.filter(w=>getZone(w)===z);
         const errs=last&&prev?wks.map(w=>Math.abs((last.qtys[w]||0)-(prev.qtys[w]||0))):[];
@@ -892,29 +1097,17 @@ function renderAnalyse(){
         return`<div style="border-left:3px solid ${zColor};padding:10px 12px;background:#F8FAFC;border-radius:0 8px 8px 0;margin-bottom:8px">
           <div style="font-size:11px;font-weight:700;color:${zColor};margin-bottom:6px">${zLabel}</div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-            <div style="text-align:center">
-              <div style="font-size:20px;font-weight:800;color:#1E293B">${mad}</div>
-              <div style="font-size:10px;color:#64748B">MAD (unités)</div>
-            </div>
-            <div style="text-align:center;border-left:1px solid #E2E8F0">
-              <div style="font-size:20px;font-weight:800;color:#1E293B">${meanD}</div>
-              <div style="font-size:10px;color:#64748B">Demande moy.</div>
-            </div>
-            <div style="text-align:center;border-left:1px solid #E2E8F0">
-              <div style="font-size:20px;font-weight:800;color:${cvColor}">${cv}%</div>
-              <div style="font-size:10px;color:#64748B">CV · Variabilité</div>
-            </div>
+            ${[{v:mad,l:"MAD"},{v:meanD,l:"Demande moy."},{v:cv+"%",l:"CV",c:cvColor}].map(k=>`<div style="text-align:center${k===undefined||k.c===undefined?"":";"}">
+              <div style="font-size:20px;font-weight:800;color:${k.c||"#1E293B"}">${k.v}</div>
+              <div style="font-size:10px;color:#64748B">${k.l}</div>
+            </div>`).join("")}
           </div>
-          <div class="pbar mt-8">
-            <div class="pbar-fill" style="width:${Math.min(cv,100)}%;background:${cvColor}"></div>
-          </div>
+          <div class="pbar mt-8"><div class="pbar-fill" style="width:${Math.min(cv,100)}%;background:${cvColor}"></div></div>
         </div>`;
       }).join("")}
-      <div style="font-size:10px;color:#64748B;margin-top:6px">CV > 30% = demande aléatoire · CV < 15% = demande stable</div>
     </div>
   </div>
 
-  <!-- MÉTRIQUES DÉTAILLÉES -->
   <div class="card mb-16">
     <div class="card-title mb-16">Biais & Tracking Signal — Dernière réception vs t-1</div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
@@ -922,26 +1115,25 @@ function renderAnalyse(){
         const pct=Math.min(Math.abs(v.ts)/v.thresh,1);
         const col=pct<0.6?C.ok:pct<1?C.warn:C.danger;
         const zL=z==="frozen"?"Zone Figée":z==="slushy"?"Zone Semi-figée":"Zone Flexible";
-        const zC=z==="frozen"?C.accent:z==="slushy"?C.warn:C.teal;
         return`<div style="border:1.5px solid ${v.flag?C.danger:"#E2E8F0"};border-radius:10px;padding:14px;background:${v.flag?"#FFF5F5":"#fff"}">
           <div class="flex-between mb-10">
             <span class="zone-chip zone-${z}">${zL}</span>
             ${v.flag?`<span class="badge badge-danger">Alerte</span>`:`<span class="badge badge-ok">OK</span>`}
           </div>
           <div style="background:#F8FAFC;border-radius:8px;padding:10px;margin-bottom:10px">
-            <div style="font-size:10px;font-weight:700;color:#64748B;text-transform:uppercase;margin-bottom:8px">Biais du programme</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px">
+            <div style="font-size:10px;font-weight:700;color:#64748B;text-transform:uppercase;margin-bottom:8px">Biais</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px">
               ${[
                 {l:"Cumulé",v:(v.cum>0?"+":"")+v.cum},
-                {l:"Moy./semaine",v:(v.mean>0?"+":"")+v.mean},
-                {l:"% prog. reçu",v:(v.biasPct>0?"+":"")+v.biasPct+"%",hl:true},
+                {l:"Moy.",v:(v.mean>0?"+":"")+v.mean},
+                {l:"% prog.",v:(v.biasPct>0?"+":"")+v.biasPct+"%",hl:true},
               ].map(k=>`<div style="text-align:center">
                 <div style="font-size:9px;color:#64748B">${k.l}</div>
                 <div style="font-size:15px;font-weight:700;color:${k.hl?(v.biasFlag?C.danger:C.ok):v.cum>0?C.danger:C.ok}">${k.v}</div>
               </div>`).join("")}
             </div>
             <div style="display:flex;gap:6px;justify-content:center">
-              <span class="badge ${v.biasFlag?"badge-danger":"badge-ok"}">${Math.abs(v.biasPct)<(CFG[it.cli]||DEFAULT_CFG).biasWarn?"Biais faible":Math.abs(v.biasPct)<(CFG[it.cli]||DEFAULT_CFG).biasDanger?"Biais modéré":"Biais fort"}</span>
+              <span class="badge ${v.biasFlag?"badge-danger":"badge-ok"}">${Math.abs(v.biasPct)<(cfg.biasWarn||10)?"Faible":Math.abs(v.biasPct)<(cfg.biasDanger||25)?"Modéré":"Fort"}</span>
               <span class="badge badge-neutral">${v.direction}</span>
             </div>
           </div>
@@ -960,11 +1152,10 @@ function renderAnalyse(){
           </div>
           <div class="pbar"><div class="pbar-fill" style="width:${pct*100}%;background:${col}"></div></div>
         </div>`;
-      }).join(""):"<div style='color:#64748B'>Minimum 2 réceptions requises</div>"}
+      }).join(""):""}
     </div>
   </div>
 
-  <!-- HISTORIQUE TIMELINE -->
   <div class="card">
     <div class="card-title mb-16">Historique des réceptions EDI</div>
     <div class="timeline">
@@ -976,59 +1167,57 @@ function renderAnalyse(){
           const b=calcZone(r,prevR,WEEKS);
           biasPct=(b.biasPct>0?"+":"")+b.biasPct+"%";
           tsF=b.ts;
-          const cfg2=CFG[it.cli]||DEFAULT_CFG;
-          const flag=Math.abs(b.ts)>cfg2.ts.frozen||Math.abs(b.biasPct)>cfg2.biasDanger;
+          const flag=Math.abs(b.ts)>(cfg.ts||DEFAULT_CFG.ts).frozen||Math.abs(b.biasPct)>(cfg.biasDanger||DEFAULT_CFG.biasDanger);
           statusBadge=flag?`<span class="badge badge-danger"><i class="ti ti-alert-triangle"></i> Dérive</span>`:`<span class="badge badge-ok">OK</span>`;
         }
-        return`<div class="timeline-item ${isLatest?"latest":""}" >
+        return`<div class="timeline-item ${isLatest?"latest":""}">
           <div class="flex-between">
             <div class="flex gap-8">
               <span style="font-weight:700;color:${isLatest?C.accent:"#64748B"};font-family:monospace">${r.id}</span>
               <span style="font-size:12px;color:#64748B">${r.date}</span>
-              ${isLatest?`<span class="badge badge-info">Dernière réception</span>`:""}
+              ${isLatest?`<span class="badge badge-info">Dernière</span>`:""}
             </div>
             ${statusBadge}
           </div>
-          ${!isLatest?`<div style="font-size:11px;color:#64748B;margin-top:4px">
-            Biais : <strong>${biasPct}</strong> · TS Figé : <strong>${tsF}</strong>
-          </div>`:""}
+          ${!isLatest?`<div style="font-size:11px;color:#64748B;margin-top:4px">Biais : <strong>${biasPct}</strong> · TS Figé : <strong>${tsF}</strong></div>`:""}
         </div>`;
       }).join("")}
     </div>
-  </div>`;
+  </div>`}`;
 }
 
 // ── STEP 5: CLIENT T1 ─────────────────────────────────────
 function renderClient(){
-  const cl=CLIENTS.find(c=>c.id===S.selectedClient);
-  const cfg=CFG[S.selectedClient]||DEFAULT_CFG;
-  const clientItems=ITEMS.filter(i=>i.cli===S.selectedClient);
-  const score=clientScore(S.selectedClient,EDI_DATA,cfg);
+  if(!GS_CONNECTED)return renderNotConnected();
+  if(!CLIENTS.length)return`<div class="card" style="text-align:center;padding:40px;color:#94A3B8">Aucun client chargé.</div>`;
+
+  const cl=CLIENTS.find(c=>c.id===S.selectedClient)||CLIENTS[0];
+  const cfg=CFG[S.selectedClient||cl.id]||DEFAULT_CFG;
+  const clientItems=ITEMS.filter(i=>i.cli===cl.id);
+  const score=clientScore(cl.id);
   const scoreColor=score>=85?C.ok:score>=65?C.warn:C.danger;
   const allMetrics=clientItems.map(it=>({it,m:calcMetrics(EDI_DATA[it.id],cfg)}));
   const totalAlerts=allMetrics.filter(({m})=>m&&Object.values(m).some(v=>v.flag)).length;
-  const avgBias=Math.round(allMetrics.reduce((a,{m})=>a+(m?Math.abs(m.frozen.biasPct):0),0)/allMetrics.length*10)/10;
+  const avgBias=allMetrics.length?Math.round(allMetrics.reduce((a,{m})=>a+(m?Math.abs(m.frozen.biasPct):0),0)/allMetrics.length*10)/10:0;
   const stableCount=allMetrics.filter(({it})=>classifyDemand(EDI_DATA[it.id]).type==="Stable").length;
 
   return`
-  <!-- SÉLECTEUR CLIENT -->
   <div class="flex gap-8 mb-16">
     ${CLIENTS.map(c=>`<button onclick="update({selectedClient:'${c.id}'})" style="
-      background:${S.selectedClient===c.id?c.color:"#fff"};
-      color:${S.selectedClient===c.id?"#fff":"#1E293B"};
-      border:2px solid ${S.selectedClient===c.id?c.color:"#E2E8F0"};
+      background:${(S.selectedClient||CLIENTS[0].id)===c.id?(c.color||C.blue):"#fff"};
+      color:${(S.selectedClient||CLIENTS[0].id)===c.id?"#fff":"#1E293B"};
+      border:2px solid ${(S.selectedClient||CLIENTS[0].id)===c.id?(c.color||C.blue):"#E2E8F0"};
       border-radius:10px;padding:10px 20px;font-size:13px;font-weight:700">
       ${c.label}
     </button>`).join("")}
   </div>
 
-  <!-- HEADER CLIENT -->
   <div class="card mb-16" style="background:#0B1F3A;border:none;color:#fff">
     <div class="flex-between">
       <div>
         <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Revue qualité EDI — Écran réunion</div>
-        <div style="font-size:24px;font-weight:800" style="color:${cl.color}">${cl.label}</div>
-        <div style="font-size:12px;color:#94a3b8;margin-top:4px">${clientItems.length} références suivies · Programme ${cl.freq}</div>
+        <div style="font-size:24px;font-weight:800;color:${cl.color||C.accent}">${cl.label}</div>
+        <div style="font-size:12px;color:#94a3b8;margin-top:4px">${clientItems.length} références · Programme ${cl.freq||"hebdo"}</div>
       </div>
       <div class="flex gap-8" style="align-items:center">
         <div style="text-align:center">
@@ -1040,7 +1229,7 @@ function renderClient(){
         </div>
         ${[
           {l:"Alertes",v:totalAlerts,c:totalAlerts>0?C.danger:C.ok},
-          {l:"Biais moy.",v:avgBias+"%",c:avgBias>cfg.biasDanger?C.danger:avgBias>cfg.biasWarn?C.warn:C.ok},
+          {l:"Biais moy.",v:avgBias+"%",c:avgBias>(cfg.biasDanger||25)?C.danger:avgBias>(cfg.biasWarn||10)?C.warn:C.ok},
           {l:"Réf. stables",v:`${stableCount}/${clientItems.length}`,c:C.teal},
         ].map(k=>`<div style="background:#1e3a5f;border-radius:10px;padding:10px 16px;text-align:center">
           <div style="font-size:20px;font-weight:800;color:${k.c}">${k.v}</div>
@@ -1051,33 +1240,28 @@ function renderClient(){
   </div>
 
   <div class="grid-2 mb-16">
-    <!-- TABLEAU BIAIS -->
     <div class="card">
       <div class="card-title mb-16">Biais par référence</div>
+      ${!allMetrics.some(({m})=>m)?`<div style="color:#94A3B8;font-size:12px;text-align:center;padding:20px">Moins de 2 réceptions pour ce client</div>`:`
       <table class="tbl">
         <thead><tr><th>Référence</th><th>Figé</th><th>Semi-figé</th><th>Flexible</th><th>Direction</th></tr></thead>
         <tbody>
           ${allMetrics.map(({it,m})=>{
-            if(!m)return`<tr><td colspan="5" style="color:#64748B">—</td></tr>`;
-            const avgBp=Math.round((Math.abs(m.frozen.biasPct)+Math.abs(m.slushy.biasPct)+Math.abs(m.liquid.biasPct))/3*10)/10;
+            if(!m)return`<tr><td colspan="5" style="color:#94A3B8;font-size:11px">${it.id} — < 2 réceptions</td></tr>`;
             return`<tr>
               <td style="font-family:monospace;font-size:11px;font-weight:700;color:${C.blue}">${it.id}</td>
               ${["frozen","slushy","liquid"].map(z=>{
                 const v=m[z];
-                const c=v.biasFlag?C.danger:v.biasPct>cfg.biasWarn?C.warn:C.ok;
+                const c=v.biasFlag?C.danger:Math.abs(v.biasPct)>(cfg.biasWarn||10)?C.warn:C.ok;
                 return`<td style="font-weight:700;color:${c};font-size:12px">${v.biasPct>0?"+":""}${v.biasPct}%</td>`;
               }).join("")}
               <td><span class="badge ${m.frozen.cum>0?"badge-warn":"badge-info"}" style="font-size:10px">${m.frozen.direction}</span></td>
             </tr>`;
           }).join("")}
         </tbody>
-      </table>
-      <div style="font-size:10px;color:#64748B;margin-top:8px;padding:6px 8px;background:#F8FAFC;border-radius:6px">
-        Seuils configurés · Avert. ${cfg.biasWarn}% · Danger ${cfg.biasDanger}%
-      </div>
+      </table>`}
     </div>
 
-    <!-- ARGUMENTS NÉGOCIATION -->
     <div class="card">
       <div class="card-title mb-4">Arguments de négociation</div>
       <div class="card-sub">Preuves de dérive documentées pour la réunion client</div>
@@ -1089,36 +1273,33 @@ function renderClient(){
           </div>`
         :allMetrics.filter(({m})=>m&&Object.values(m).some(v=>v.flag)).map(({it,m})=>{
           const dom=Object.entries(m).filter(([,v])=>v.flag).map(([z])=>z==="frozen"?"Figé":z==="slushy"?"Semi-figé":"Flexible").join(", ");
-          const dir=m.frozen.direction;
           const avgBp=Math.round((Math.abs(m.frozen.biasPct)+Math.abs(m.slushy.biasPct)+Math.abs(m.liquid.biasPct))/3*10)/10;
           return`<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:10px 12px;margin-bottom:8px">
             <div style="font-size:12px;font-weight:700;margin-bottom:4px">${it.id} — ${it.label}</div>
             <div style="font-size:11px;color:#64748B;line-height:1.6">
-              Biais moyen <strong style="color:${C.warn}">${avgBp}%</strong> · Zone(s) : <strong>${dom}</strong> · Tendance : <strong>${dir}</strong>
-              <br>→ Risque ${dir==="Sur-programmé"?"surstock et immobilisation de capital":"rupture et transport exceptionnel"}
+              Biais moyen <strong style="color:${C.warn}">${avgBp}%</strong> · Zone(s) : <strong>${dom}</strong> · ${m.frozen.direction}
+              <br>→ Risque ${m.frozen.cum>0?"surstock et immobilisation de capital":"rupture et transport exceptionnel"}
             </div>
           </div>`;
         }).join("")}
     </div>
   </div>
 
-  <!-- TABLEAU TS ── -->
   <div class="card">
-    <div class="card-title mb-16">Tracking Signal — Stabilité des programmes par référence</div>
+    <div class="card-title mb-16">Tracking Signal par référence</div>
     <table class="tbl">
-      <thead><tr><th>Référence</th><th>Désignation</th><th>TS Zone Figée</th><th>TS Semi-figée</th><th>TS Flexible</th><th>Typolo.</th><th>Statut global</th></tr></thead>
+      <thead><tr><th>Référence</th><th>Désignation</th><th>TS Zone Figée</th><th>TS Semi-figée</th><th>TS Flexible</th><th>Typolo.</th><th>Statut</th></tr></thead>
       <tbody>
         ${allMetrics.map(({it,m})=>{
           const p=classifyDemand(EDI_DATA[it.id]);
           const hasFlag=m&&Object.values(m).some(v=>v.flag);
-          const cfg2=CFG[it.cli]||DEFAULT_CFG;
           return`<tr class="${hasFlag?"alert-row":""}">
             <td style="font-family:monospace;font-size:11px;font-weight:700;color:${C.blue}">${it.id}</td>
             <td style="font-size:12px">${it.label}</td>
             ${m?["frozen","slushy","liquid"].map(z=>`<td style="font-weight:700;font-size:12px;color:${m[z].tsFlag?C.danger:C.ok}">
               ${m[z].ts} ${m[z].tsFlag?"🚨":"✓"} <span style="font-size:10px;color:#94A3B8">/±${m[z].thresh}</span>
-            </td>`).join(""):["","",""].map(()=>`<td>—</td>`).join("")}
-            <td><span class="badge badge-neutral" style="color:${p.color};background:${p.color}18">${p.type}</span></td>
+            </td>`).join(""):["","",""].map(()=>`<td style="color:#94A3B8;font-size:11px">< 2 réc.</td>`).join("")}
+            <td><span class="badge badge-neutral" style="color:${p.color}">${p.type}</span></td>
             <td><span class="badge ${hasFlag?"badge-danger":"badge-ok"}">${hasFlag?"⚠ Alerte":"✓ OK"}</span></td>
           </tr>`;
         }).join("")}
@@ -1129,13 +1310,13 @@ function renderClient(){
 
 // ── STEP 6: SHARE ─────────────────────────────────────────
 function renderShare(){
+  if(!GS_CONNECTED)return renderNotConnected();
   const alerts=getAllAlerts();
   return`
   <div class="card mb-16">
     <div class="card-title mb-4">Partager l'analyse avec les équipes</div>
-    <div class="card-sub">Sélectionner les destinataires et le contenu à inclure</div>
+    <div class="card-sub">Rapport automatique · Email mailto · Export CSV</div>
   </div>
-
   <div class="grid-2">
     <div>
       <div class="card mb-16">
@@ -1154,22 +1335,7 @@ function renderShare(){
           </div>
         </div>`).join("")}
       </div>
-
-      <div class="card">
-        <div class="card-title mb-16">Contenu à inclure</div>
-        ${[
-          "Synthèse importation (références OK/KO)",
-          `Alertes actives (${alerts.length})`,
-          "Analyse Biais & Tracking Signal",
-          "Recommandations Safety Stock",
-          "Score qualité par client T1",
-        ].map((item,i)=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #F1F5F9">
-          <input type="checkbox" checked id="cont${i}" style="width:16px;height:16px;accent-color:${C.blue}">
-          <span style="font-size:13px">${item}</span>
-        </div>`).join("")}
-      </div>
     </div>
-
     <div>
       <div class="card mb-16">
         <div class="card-title mb-16">Aperçu du rapport</div>
@@ -1188,20 +1354,106 @@ function renderShare(){
           </div>`:""}
         </div>
       </div>
-
       <div style="display:flex;flex-direction:column;gap:10px">
         <button class="btn btn-primary btn-lg" style="width:100%" onclick="showEmailModal()">
           <i class="ti ti-mail-forward"></i> Envoyer par email (mailto)
         </button>
         <button class="btn btn-ghost btn-lg" style="width:100%" onclick="window.print()">
-          <i class="ti ti-printer"></i> Imprimer / Exporter PDF
+          <i class="ti ti-printer"></i> Imprimer / PDF
         </button>
         <button class="btn btn-ghost btn-lg" style="width:100%" onclick="exportCSV()">
-          <i class="ti ti-file-spreadsheet"></i> Exporter Excel / CSV
+          <i class="ti ti-file-spreadsheet"></i> Exporter CSV
         </button>
       </div>
     </div>
   </div>`;
+}
+
+// ── NOT CONNECTED PLACEHOLDER ─────────────────────────────
+function renderNotConnected(){
+  return`<div class="card" style="text-align:center;padding:48px 40px">
+    <i class="ti ti-plug-x" style="font-size:48px;color:#CBD5E1;display:block;margin-bottom:12px"></i>
+    <div style="font-size:16px;font-weight:700;margin-bottom:8px">Connexion Google Sheets requise</div>
+    <div class="text-sm text-muted mb-16">Cliquez sur "Connecter GS" pour charger les données</div>
+    <button class="btn btn-accent" onclick="loadFromGAS()">
+      <i class="ti ti-plug-connected"></i> Connecter Google Sheets
+    </button>
+  </div>`;
+}
+
+// ── CONFIG MODAL ──────────────────────────────────────────
+function renderConfigModal(){
+  if(!S.showConfig)return"";
+  return`<div class="modal-overlay" onclick="update({showConfig:false})">
+    <div class="modal" onclick="event.stopPropagation()" style="width:620px">
+      <div class="flex-between mb-16">
+        <div>
+          <div class="modal-title"><i class="ti ti-settings" style="color:${C.accent};margin-right:6px"></i>Configuration OPTIPLAN</div>
+          <div class="modal-sub">Connexion Google Sheets · Paramètres BDD</div>
+        </div>
+        <button onclick="update({showConfig:false})" style="background:none;border:none;font-size:20px;cursor:pointer;color:#64748B">×</button>
+      </div>
+
+      <div style="margin-bottom:16px">
+        <label style="font-size:11px;font-weight:700;color:#64748B;display:block;margin-bottom:6px">URL Google Apps Script</label>
+        <input id="gasUrlInput" type="text" value="${GAS_URL}"
+          style="width:100%;padding:10px 12px;border:1px solid #E2E8F0;border-radius:8px;font-size:12px;font-family:monospace;outline:none;color:#1E293B"
+          placeholder="https://script.google.com/macros/s/...">
+        <div style="font-size:10px;color:#94A3B8;margin-top:4px">
+          Extensions > Apps Script > Déployer > Application Web > Copier l'URL
+        </div>
+      </div>
+
+      <div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:12px;color:#92400E">
+        <strong>⚠ Important :</strong> Le GAS doit être déployé avec accès "Toute personne" pour fonctionner depuis GitHub Pages.
+        Après modification, cliquez Tester la connexion.
+      </div>
+
+      <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:12px">
+        <div style="font-weight:700;margin-bottom:6px">Statut actuel</div>
+        <div class="flex gap-8">
+          <div class="gs-dot${GS_CONNECTED?" connected":""}"></div>
+          <span style="color:${GS_CONNECTED?"#10B981":"#EF4444"};font-weight:600">
+            ${GS_CONNECTED?"Connecté — données chargées":"Non connecté"}
+          </span>
+        </div>
+        ${GS_CONNECTED?`<div style="margin-top:6px;color:#64748B">
+          ${ITEMS.length} références · ${CLIENTS.length} clients · ${Object.values(EDI_DATA).reduce((a,r)=>a+r.length,0)} réceptions
+        </div>`:""}
+      </div>
+
+      <div class="flex-between">
+        <button onclick="update({showConfig:false})" class="btn btn-ghost">Fermer</button>
+        <div class="flex gap-8">
+          <button onclick="resetGASUrl()" class="btn btn-ghost btn-sm">Remettre l'URL par défaut</button>
+          <button onclick="saveAndConnect()" class="btn btn-accent">
+            <i class="ti ti-plug-connected"></i> Tester la connexion
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function saveAndConnect(){
+  const input=document.getElementById("gasUrlInput");
+  if(!input)return;
+  const newUrl=input.value.trim();
+  if(!newUrl.startsWith("https://script.google.com")){
+    alert("URL invalide. Elle doit commencer par https://script.google.com");
+    return;
+  }
+  GAS_URL=newUrl;
+  localStorage.setItem("optiplan_gas_url",GAS_URL);
+  update({showConfig:false});
+  loadFromGAS();
+}
+
+function resetGASUrl(){
+  GAS_URL=GAS_URL_DEFAULT;
+  localStorage.setItem("optiplan_gas_url",GAS_URL);
+  const input=document.getElementById("gasUrlInput");
+  if(input)input.value=GAS_URL;
 }
 
 // ── HELP MODAL ────────────────────────────────────────────
@@ -1223,7 +1475,7 @@ function renderHelpModal(){
       <div class="flex-between mb-16">
         <div>
           <div class="modal-title"><i class="ti ti-book-2" style="color:${C.accent};margin-right:6px"></i>APICS Dictionary</div>
-          <div class="modal-sub">Terminologie supply chain — Logique APICS CPIM/CSCP</div>
+          <div class="modal-sub">Terminologie supply chain — APICS CPIM/CSCP</div>
         </div>
         <button onclick="update({showHelp:false})" style="background:none;border:none;font-size:20px;color:#64748B;cursor:pointer">×</button>
       </div>
@@ -1257,7 +1509,7 @@ function renderStep(){
   }
 }
 
-// ── CSV PARSE ─────────────────────────────────────────────
+// ── CSV PARSERS ───────────────────────────────────────────
 function parseEDI(text,fileName){
   const lines=text.split(/\r?\n/).filter(l=>l.trim()&&l.replace(/;/g,"").trim());
   const meta={};let hi=-1,cols=[],periods=[],bucket="week",rows=[];
@@ -1267,11 +1519,19 @@ function parseEDI(text,fileName){
     if(k==="EMETTEUR")meta.emetteur=cells[1];
     else if(k==="DATE_EMISSION")meta.date=cells[1];
     else if(k==="RECEPTION_NUM")meta.reception=cells[1];
-    else if(k==="REFERENCE"){hi=i;cols=cells;periods=cols.filter(c=>c.match(/^S\d+$|^\d{2}\/\d{2}$/));bucket=periods[0]?.match(/^\d{2}\/\d{2}$/)?"day":"week";}
+    else if(k==="REFERENCE"){
+      hi=i;cols=cells;
+      periods=cols.filter(c=>c.match(/^S\d+$|^\d{2}\/\d{2}$/));
+      bucket=periods[0]?.match(/^\d{2}\/\d{2}$/)?"day":"week";
+    }
     else if(hi>-1&&cells[0].match(/^[A-Z0-9]/)){
       const row={};cols.forEach((c,j)=>{row[c]=cells[j]||"";});
-      row._qtys={};periods.forEach(p=>{row._qtys[p]=parseInt(row[p])||0;});
-      row._periods=periods;row._bucket=bucket;rows.push(row);
+      // Normaliser la référence
+      row.REFERENCE=(row.REFERENCE||"").trim();
+      row._qtys={};
+      periods.forEach(p=>{row._qtys[p]=parseInt(row[p])||0;});
+      row._periods=periods;row._bucket=bucket;
+      if(row.REFERENCE)rows.push(row);
     }
   });
   return{meta,rows,periods,bucket,fileName,valid:rows.length>0};
@@ -1280,7 +1540,11 @@ function parseEDI(text,fileName){
 function parseMaster(text){
   const lines=text.split(/\r?\n/).filter(l=>l.trim());
   const r={};
-  lines.forEach((l,i)=>{if(i===0)return;const c=l.split(";").map(x=>x.trim());if(c[0]&&c[1])r[c[0]]={ss:parseInt(c[1])||0,uom:c[2]||"PCS"};});
+  lines.forEach((l,i)=>{
+    if(i===0&&l.toUpperCase().includes("REFERENCE"))return; // skip header
+    const c=l.split(";").map(x=>x.trim());
+    if(c[0]&&c[1])r[c[0]]={ss:parseInt(c[1])||0,uom:c[2]||"PCS"};
+  });
   return r;
 }
 
@@ -1295,6 +1559,7 @@ function handleEDIFiles(files){
   }));
   Promise.all(pendingFiles).then(parsed=>{
     S.importedFiles=parsed;
+    // Afficher la liste des fichiers parsés
     const el=document.getElementById("ediFileList");
     if(el)el.innerHTML=parsed.map(p=>`<div style="display:flex;align-items:center;gap:8px;margin-top:8px;padding:8px 10px;background:#F8FAFC;border-radius:8px;border:1px solid ${p.valid?"#D1FAE5":"#FEE2E2"}">
       <i class="ti ti-file-spreadsheet" style="color:${p.valid?C.ok:C.danger}"></i>
@@ -1302,11 +1567,22 @@ function handleEDIFiles(files){
       <span style="font-size:11px;color:#64748B">${p.rows.length} réf. · ${p.periods.length} pér.</span>
       <span class="badge ${p.valid?"badge-ok":"badge-danger"}">${p.valid?"✓ Valide":"⚠ Erreur"}</span>
     </div>`).join("");
+
+    // Afficher l'aperçu
     const prev=document.getElementById("importPreview");
     if(prev)prev.innerHTML=`<div class="card-sm" style="background:#EFF9FF;border-color:#BAE6FD">
       <div style="font-size:12px;font-weight:700;color:${C.accent}"><i class="ti ti-eye" style="margin-right:5px"></i>Aperçu · ${parsed.length} fichier(s) · ${parsed.reduce((a,f)=>a+f.rows.length,0)} références</div>
-      ${parsed.map(f=>`<div style="font-size:11px;color:#64748B;margin-top:4px">${f.fileName} · Réception ${f.meta.reception||"?"} · ${f.meta.date||""} · ${f.rows.length} réf.</div>`).join("")}
+      ${parsed.map(f=>{
+        // Vérifier le matching avec les items connus
+        const matched=f.rows.filter(r=>ITEMS.find(i=>i.id===r.REFERENCE.trim())).length;
+        const unmatched=f.rows.length-matched;
+        return`<div style="font-size:11px;color:#64748B;margin-top:4px">
+          ${f.fileName} · Réception ${f.meta.reception||"?"} · ${f.meta.date||""} · ${f.rows.length} réf.
+          ${unmatched>0?`<span class="badge badge-warn" style="margin-left:6px">${unmatched} non reconnue(s)</span>`:""}
+        </div>`;
+      }).join("")}
     </div>`;
+
     const btn=document.getElementById("importActionBtn");
     if(btn)btn.style.display="block";
   });
@@ -1317,48 +1593,41 @@ function handleMasterFile(file){
   const r=new FileReader();
   r.onload=e=>{
     const data=parseMaster(e.target.result);
-    Object.assign(SS,data);
     const count=Object.keys(data).length;
     const el=document.getElementById("masterStatus");
-    if(el)el.innerHTML=`<div class="badge badge-ok" style="padding:6px 10px"><i class="ti ti-circle-check" style="margin-right:4px"></i>${count} articles mis à jour</div>`;
-    showToast(`${count} SS actuel importés`,"ti-package");
+    if(el)el.innerHTML=`<div class="flex" style="gap:10px;margin-top:8px">
+      <div class="badge badge-ok" style="padding:6px 10px"><i class="ti ti-circle-check" style="margin-right:4px"></i>${count} articles prêts</div>
+      ${GS_CONNECTED?`<button class="btn btn-success btn-sm" onclick="importMasterToGAS(${JSON.stringify(data).replace(/"/g,'&quot;')})">
+        <i class="ti ti-cloud-upload"></i> Envoyer dans Google Sheets
+      </button>`:`<span class="text-sm text-muted">Connectez GS pour synchroniser</span>`}
+    </div>`;
+    showToast(`${count} SS actuel parsés`,"ti-package");
+    // Si connecté, proposer l'import immédiat
+    if(GS_CONNECTED)importMasterToGAS(data);
   };
   r.readAsText(file,"utf-8");
 }
 
-function doImport(){
-  S.importedFiles.forEach(f=>{
-    f.rows.forEach(row=>{
-      const ref=row.REFERENCE;
-      const it=ITEMS.find(i=>i.id===ref);
-      if(!it)return;
-      const recs=EDI_DATA[ref]||[];
-      EDI_DATA[ref]=[...recs.slice(-5),{
-        id:f.meta.reception||`R${String(recs.length+1).padStart(2,"0")}`,
-        date:f.meta.date||new Date().toLocaleDateString("fr-FR"),
-        qtys:row._qtys
-      }];
-    });
-  });
-  S.importedFiles=[];
-  S.importResult=true;
+async function doImport(){
+  if(!S.importedFiles.length){showToast("Aucun fichier à importer","ti-alert-triangle");return;}
+  if(!GS_CONNECTED){showToast("Connectez d'abord Google Sheets","ti-alert-triangle");return;}
+  await importToGAS(S.importedFiles);
   const btn=document.getElementById("importActionBtn");
   if(btn)btn.style.display="none";
   const suc=document.getElementById("importSuccessMsg");
   if(suc)suc.style.display="block";
-  showToast("Import réalisé · Données mises à jour","ti-circle-check");
 }
 
 // ── EXPORT CSV ────────────────────────────────────────────
 function exportCSV(){
   const alerts=getAllAlerts();
-  const rows=[["Référence","Désignation","Client T1","Zone","Biais%","TS","Statut"]];
+  const rows=[["Référence","Désignation","Client T1","Zone","Biais%","TS","Statut","Direction"]];
   ITEMS.forEach(it=>{
     const m=calcMetrics(EDI_DATA[it.id],CFG[it.cli]||DEFAULT_CFG);
     if(!m)return;
-    const cl=CLIENTS.find(c=>c.id===it.cli);
+    const cl=CLIENTS.find(c=>c.id===it.cli)||{label:it.cli};
     ["frozen","slushy","liquid"].forEach(z=>{
-      rows.push([it.id,it.label,cl.label,z,m[z].biasPct+"%",m[z].ts,m[z].flag?"ALERTE":"OK"]);
+      rows.push([it.id,it.label,cl.label,z,m[z].biasPct+"%",m[z].ts,m[z].flag?"ALERTE":"OK",m[z].direction]);
     });
   });
   const csv=rows.map(r=>r.join(";")).join("\n");
@@ -1375,20 +1644,22 @@ function showEmailModal(){
   const alerts=getAllAlerts();
   const existing=document.getElementById("emailModal");
   if(existing)existing.remove();
-  const flagLines=alerts.length>0?alerts.slice(0,5).map(a=>`• ${a.item.id} — ${a.item.label} | Zone ${a.zone==="frozen"?"Figée":a.zone==="slushy"?"Semi-figée":"Flexible"} | TS=${a.ts||"—"}`).join("\n"):"✓ Aucune alerte — programmes stables";
+  const flagLines=alerts.length>0
+    ?alerts.slice(0,8).map(a=>`• ${a.item.id} — ${a.item.label} | Zone ${a.zone==="frozen"?"Figée":a.zone==="slushy"?"Semi-figée":"Flexible"} | TS=${a.ts||"—"}`).join("\n")
+    :"✓ Aucune alerte — programmes stables";
   const subj=`[OPTIPLAN] Analyse EDI ${new Date().toLocaleDateString("fr-FR")} — ${alerts.length} alerte(s)`;
-  const body=`Bonjour,\n\nVeuillez trouver ci-dessous la synthèse de l'analyse EDI OPTIPLAN.\n\nDate : ${new Date().toLocaleDateString("fr-FR")}\nRéférences analysées : ${ITEMS.length}\nAlertes actives : ${alerts.length}\n\n--- ALERTES ---\n${flagLines}\n\nCordialement,\nEGBS — Supply Chain / ADV`;
+  const body=`Bonjour,\n\nVeuillez trouver la synthèse de l'analyse EDI OPTIPLAN.\n\nDate : ${new Date().toLocaleDateString("fr-FR")}\nRéférences analysées : ${ITEMS.length}\nAlertes actives : ${alerts.length}\n\n--- ALERTES ---\n${flagLines}\n\nCordialement,\nEGBS — Supply Chain / ADV`;
   const modal=document.createElement("div");
   modal.id="emailModal";
   modal.className="modal-overlay";
   modal.innerHTML=`<div class="modal">
     <div class="flex-between mb-16">
-      <div><div class="modal-title">Partager l'analyse par email</div><div class="modal-sub">Le rapport sera envoyé via votre client email</div></div>
+      <div><div class="modal-title">Partager l'analyse par email</div><div class="modal-sub">Via votre client email (mailto)</div></div>
       <button onclick="this.closest('.modal-overlay').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#64748B">×</button>
     </div>
     <div style="margin-bottom:12px">
       <label style="font-size:11px;font-weight:700;color:#64748B;display:block;margin-bottom:4px">Destinataire(s)</label>
-      <input id="emailTo" type="text" placeholder="mps@egbs.ma; appro@egbs.ma; direction@egbs.ma"
+      <input id="emailTo" type="text" placeholder="mps@egbs.ma; appro@egbs.ma"
         style="width:100%;padding:8px 12px;border:1px solid #E2E8F0;border-radius:8px;font-size:12px;outline:none">
     </div>
     <div style="margin-bottom:12px">
@@ -1414,7 +1685,7 @@ function sendEmail(){
   const body=document.getElementById("emailBody").value;
   if(!to){alert("Veuillez renseigner un destinataire");return;}
   window.location.href=`mailto:${to}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`;
-  document.getElementById("emailModal").remove();
+  document.getElementById("emailModal")?.remove();
 }
 
 function showShareAlert(idx){
@@ -1445,7 +1716,10 @@ function attachEvents(){
   if(fm)fm.addEventListener("change",e=>handleMasterFile(e.target.files[0]));
 }
 
+// ── INIT ─────────────────────────────────────────────────
 render();
+// Auto-connect au chargement si l'URL est déjà configurée
+loadFromGAS();
 </script>
 </body>
 </html>
