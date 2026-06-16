@@ -1703,7 +1703,32 @@ function parseEDI(text,fileName){
 function parseMaster(text){
   const lines=text.split(/\r?\n/).filter(l=>l.trim());
   const r={};
-  lines.forEach((l,i)=>{if(i===0)return;const c=l.split(";").map(x=>x.trim());if(c[0]&&c[1])r[c[0]]={ss:parseInt(c[1])||0,uom:c[2]||"PCS"};});
+  let hasHeader=false;
+  let colRef=0,colSS=1,colUOM=2,colPrix=3;
+  lines.forEach((l,i)=>{
+    const c=l.split(";").map(x=>x.trim().replace(/^\uFEFF/,""));
+    if(i===0){
+      // Détecter les colonnes depuis le header
+      const up=c.map(x=>x.toUpperCase());
+      const iRef=up.findIndex(x=>x==="REFERENCE"||x==="REF_ID"||x==="REF");
+      const iSS=up.findIndex(x=>x.includes("SS"));
+      const iUOM=up.findIndex(x=>x==="UOM");
+      const iPrix=up.findIndex(x=>x.includes("PRIX")||x.includes("PRICE"));
+      if(iRef>=0)colRef=iRef;
+      if(iSS>=0)colSS=iSS;
+      if(iUOM>=0)colUOM=iUOM;
+      if(iPrix>=0)colPrix=iPrix;
+      hasHeader=true;
+      return;
+    }
+    const ref=c[colRef];
+    const ss=parseInt(c[colSS])||0;
+    if(ref&&ss)r[ref]={
+      ss,
+      uom:c[colUOM]||"PCS",
+      prix:parseFloat(c[colPrix])||0
+    };
+  });
   return r;
 }
 
