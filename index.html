@@ -2016,15 +2016,17 @@ async function importToDB(parsedFiles) {
 
     if (!rows.length) { errors.push(f.fileName + ": aucune référence reconnue"); continue; }
 
+    // Si SEMAINE_RECEPTION absente du CSV, générer depuis RECEPTION_NUM pour garantir l'unicité
+    const sWeekFinal = f.meta.sWeek || f.meta.reception || ("R" + Date.now());
     const payload = {
       hash:     f.hash || "",
       fileName: f.fileName,
       meta: {
         reception: f.meta.reception,
         date:      f.meta.date,
-        sWeek:     f.meta.sWeek || "",
+        sWeek:     sWeekFinal,
         year:      f.meta.year  || new Date().getFullYear(),
-        revNum:    f.meta.revNum || 1,
+        revNum:    parseInt(f.meta.revNum) || 1,
         emetteur:  f.meta.emetteur || "",
       },
       rows,
@@ -2033,7 +2035,7 @@ async function importToDB(parsedFiles) {
     try {
       const res = await dbGet({action:"importEDI", data: JSON.stringify(payload)});
       totalImported += res.imported || 0;
-      if (res.skipped > 0) showToast(`${res.skipped} doublon(s) ignoré(s)`,"ti-alert-triangle",3000);
+      if (res.skipped > 0) showToast(`${res.skipped} ligne(s) déjà existante(s) — ignorée(s)`,"ti-info-circle",2500);
     } catch(e) {
       errors.push(f.fileName + ": " + e.message);
     }
@@ -2053,7 +2055,17 @@ async function importToDB(parsedFiles) {
 async function importMasterToDB(masterData) {
   if (!DB_CONNECTED) { showToast("Connectez d'abord la base de données","ti-alert-triangle"); return; }
   showLoadingOverlay("Mise à jour SS...");
-  const rows = Object.entries(masterData).map(([ref,v]) => ({ref, ss_actuel:v.ss, uom:v.uom||"PCS", prix:v.prix||0}));
+  const rows = Object.entries(masterData).map(([ref,v]) => ({
+    ref,
+    ss_actuel: v.ss   || 0,
+    uom:       v.uom  || "PCS",
+    prix:      v.prix || 0,
+    label:     v.label|| ref,
+    cli:       v.cli  || "",
+    fam:       v.fam  || "",
+    pn:        v.pn   || "",
+    bucket:    v.bucket|| "week",
+  }));
   try {
     await dbGet({action:"importMaster", data: JSON.stringify(rows)});
     showToast(`${rows.length} SS mis à jour`, "ti-circle-check");
