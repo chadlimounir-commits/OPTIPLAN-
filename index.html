@@ -1565,18 +1565,30 @@ function renderClient(){
   const clientItems=ITEMS.filter(i=>i.cli===S.selectedClient);
   const score=clientScore(S.selectedClient);
   const sc=score>=85?C.ok:score>=65?C.warn:C.danger;
-  const allM=clientItems.map(it=>({it,m:calcMetrics(EDI_DATA[it.id],cfg)}));
-  const totalAlerts=allM.filter(({m})=>m&&(m.frozen.flag||m.slushy.danger||m.liquid.danger)).length;
-  const avgBias=Math.round(allM.reduce((a,{m})=>a+(m?Math.abs(m.frozen.biasPct):0),0)/allM.length*10)/10;
-  const stableCount=allM.filter(({it})=>classifyDemand(EDI_DATA[it.id]).type==="Stable").length;
+  // Alertes et métriques depuis la BDD — source unique de vérité
+  const clientAlerts  = ALERTS_DATA.filter(a => String(a.CLIENT_ID||"").trim() === S.selectedClient);
+  const totalAlerts   = [...new Set(clientAlerts.map(a => String(a.REF_ID||"").trim()))].length;
+  const clientMetrics = clientItems.map(it => {
+    const mets = METRICS_DATA.filter(mx => String(mx.REF_ID||"").trim() === it.id);
+    return mets.length ? mets[mets.length-1] : null;
+  }).filter(Boolean);
+  const avgBias = clientMetrics.length
+    ? Math.round(clientMetrics.reduce((a,mx)=>a+Math.abs(parseFloat(mx.FROZEN_BIAS_PCT)||0),0)/clientMetrics.length*10)/10
+    : 0;
+  const stableCount = clientItems.filter(it => classifyDemand(EDI_DATA[it.id]).type==="Stable").length;
+  const allM = clientItems.map(it=>({it, m:calcMetrics(EDI_DATA[it.id],cfg)}));
 
   // Score par famille pour ce client
   const famScores=FAMILLES.map(fam=>{
     const items=clientItems.filter(i=>i.fam===fam.id);
     if(!items.length)return null;
     let flags=0;
-    items.forEach(it=>{const m=calcMetrics(EDI_DATA[it.id],cfg);if(m&&(m.frozen.flag||m.slushy.danger))flags++;});
-    return{fam,items,score:Math.round((1-flags/items.length)*100),flags};
+    // Compter alertes BDD pour cette famille/client
+    flags = ALERTS_DATA.filter(a =>
+      String(a.CLIENT_ID||"").trim() === S.selectedClient &&
+      items.some(it => String(a.REF_ID||"").trim() === it.id)
+    ).length;
+    return{fam,items,score:Math.max(0,Math.round((1-flags/(items.length*3))*100)),flags};
   }).filter(Boolean);
 
   return`
