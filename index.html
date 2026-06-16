@@ -1703,30 +1703,35 @@ function parseEDI(text,fileName){
 function parseMaster(text){
   const lines=text.split(/\r?\n/).filter(l=>l.trim());
   const r={};
-  let hasHeader=false;
-  let colRef=0,colSS=1,colUOM=2,colPrix=3;
+  let colRef=0,colSS=1,colUOM=2,colPrix=3,colLabel=-1,colCli=-1,colFam=-1,colPn=-1,colBucket=-1;
   lines.forEach((l,i)=>{
     const c=l.split(";").map(x=>x.trim().replace(/^\uFEFF/,""));
     if(i===0){
-      // Détecter les colonnes depuis le header
       const up=c.map(x=>x.toUpperCase());
-      const iRef=up.findIndex(x=>x==="REFERENCE"||x==="REF_ID"||x==="REF");
-      const iSS=up.findIndex(x=>x.includes("SS"));
-      const iUOM=up.findIndex(x=>x==="UOM");
-      const iPrix=up.findIndex(x=>x.includes("PRIX")||x.includes("PRICE"));
-      if(iRef>=0)colRef=iRef;
-      if(iSS>=0)colSS=iSS;
-      if(iUOM>=0)colUOM=iUOM;
-      if(iPrix>=0)colPrix=iPrix;
-      hasHeader=true;
+      const fi=(terms)=>up.findIndex(x=>terms.some(t=>x.includes(t)));
+      const r2=fi(["REFERENCE","REF_ID","REF"]); if(r2>=0)colRef=r2;
+      const s=fi(["SS_ACTUEL","SS"]); if(s>=0)colSS=s;
+      const u=fi(["UOM"]); if(u>=0)colUOM=u;
+      const p=fi(["PRIX","PRICE"]); if(p>=0)colPrix=p;
+      colLabel =fi(["LABEL","DESIGNATION"]);
+      colCli   =fi(["CLIENT_ID","CLIENT","CLI"]);
+      colFam   =fi(["FAMILLE","FAM"]);
+      colPn    =fi(["PN_CLIENT","PN"]);
+      colBucket=fi(["BUCKET"]);
       return;
     }
-    const ref=c[colRef];
+    const ref=(c[colRef]||"").trim();
     const ss=parseInt(c[colSS])||0;
-    if(ref&&ss)r[ref]={
+    if(!ref)return;
+    r[ref]={
       ss,
-      uom:c[colUOM]||"PCS",
-      prix:parseFloat(c[colPrix])||0
+      uom:     c[colUOM]||"PCS",
+      prix:    parseFloat(c[colPrix])||0,
+      label:   colLabel>=0?c[colLabel]||ref:ref,
+      cli:     colCli>=0?c[colCli]||"":"",
+      fam:     colFam>=0?c[colFam]||"":"",
+      pn:      colPn>=0?c[colPn]||"":"",
+      bucket:  colBucket>=0?c[colBucket]||"week":"week",
     };
   });
   return r;
@@ -1942,7 +1947,7 @@ function attachEvents(){
 // Tout en GET (no CORS depuis GitHub Pages)
 // ════════════════════════════════════════════════════════════
 
-const DB_URL_DEFAULT = "https://script.google.com/macros/s/AKfycby2hbLq7CQWSW3BkzptJKHHTvJL460ITpzQxYDd936Zbf98T3zZ0F2qvp3V__-78Z2EBw/exec";
+const DB_URL_DEFAULT = "https://script.google.com/macros/s/AKfycbxJkdjyPuR4fvQfftFp_0lJMD4uCvtDeCE5OS67iKx19L-_5bRmLAFEvKSiCGRsXjZy-Q/exec";
 let DB_URL = localStorage.getItem("optiplan_db_url") || DB_URL_DEFAULT;
 let DB_CONNECTED = false;
 let DB_LOADING   = false;
