@@ -264,6 +264,7 @@ function buildAllEDI(){
 
 // KPI: Dernière révision S courante vs dernière révision S-1
 function getRefPrev(recs){
+  if(!recs||!recs.length)return{current:null,prev:null};
   // Group by sWeek
   const byWeek={};
   recs.forEach(r=>{
@@ -318,6 +319,7 @@ function calcZoneVar(current,prev,zone,cfg){
 }
 
 function calcMetrics(recs,cfg){
+  if(!recs||!recs.length)return null;
   const {current,prev,currentWeek,prevWeek}=getRefPrev(recs);
   if(!current||!prev)return null;
   const frozen=calcFrozen(current,prev,cfg);
@@ -360,9 +362,11 @@ function clientScore(clientId){
 
 function getAllAlerts(){
   const alerts=[];
+  if(!ITEMS||!ITEMS.length)return alerts;
   ITEMS.forEach(it=>{
     const cfg=CFG[it.cli]||DEFAULT_CFG;
-    const m=calcMetrics(EDI_DATA[it.id],cfg);
+    const recs=EDI_DATA[it.id]||[];
+    const m=calcMetrics(recs,cfg);
     if(!m)return;
     const recs=EDI_DATA[it.id];
     const {current}=getRefPrev(recs);
@@ -416,10 +420,18 @@ function showToast(msg,icon="ti-circle-check",ms=3000){
 
 // ── RENDER ROUTER ────────────────────────────────────────
 
+function renderToast(){
+  if(!S.toast)return"";
+  return`<div class="toast">
+    <i class="ti ${S.toast.icon||"ti-circle-check"}" style="font-size:18px;color:#00C9B1"></i>
+    ${S.toast.msg}
+  </div>`;
+}
+
 function render(){
   const app=document.getElementById("app");
   if(S.page==="login"){
-    app.innerHTML=renderLogin()+(S.toast?renderToast():"");
+    app.innerHTML=renderLogin()+(S.toast&&typeof renderToast==="function"?renderToast():"");
     return;
   }
   app.innerHTML=renderTopBar()+renderStepsBar()+
@@ -1906,7 +1918,7 @@ function attachEvents(){
 // Tout en GET (no CORS depuis GitHub Pages)
 // ════════════════════════════════════════════════════════════
 
-const DB_URL_DEFAULT = "https://script.google.com/macros/s/AKfycbzyNccRuaVltsduqHpnIWX5vqHLOhXaXPY7AdtA7ym_stNv-pDizJyKqCFhW8gtQJyJNQ/exec";
+const DB_URL_DEFAULT = "https://script.google.com/macros/s/AKfycbwofZE_NaRemL-D14TPsT5f1pj96Sk9JJqGYZXi6WbxGYo8X0yzUIG9AC9uKXSBeXH7Lw/exec";
 let DB_URL = localStorage.getItem("optiplan_db_url") || DB_URL_DEFAULT;
 let DB_CONNECTED = false;
 let DB_LOADING   = false;
