@@ -348,94 +348,56 @@ function classifyDemand(recs){
 
 function clientScore(clientId){
   const items=ITEMS.filter(i=>i.cli===clientId);
-  let total=0,flags=0;
-  items.forEach(it=>{
-    const m=calcMetrics(EDI_DATA[it.id],CFG[it.cli]||DEFAULT_CFG);
-    if(!m)return;
-    if(m.frozen.flag)flags++;
-    if(m.slushy.danger)flags++;
-    if(m.liquid.danger)flags++;
-    total+=3;
-  });
-  return total>0?Math.round((1-flags/total)*100):100;
+  if(!items.length)return 100;
+  const total=items.length*3;
+  const flags=ALERTS_DATA.filter(a=>String(a.CLIENT_ID||"").trim()===clientId&&
+    ["frozen","slushy","liquid"].includes(String(a.ZONE||"").toLowerCase())).length;
+  return Math.max(0,Math.round((1-flags/total)*100));
 }
 
 function getAllAlerts(){
   if(!ALERTS_DATA||!ALERTS_DATA.length) return [];
-
-  const alerts = [];
-  ALERTS_DATA.forEach(a => {
-    const refId = String(a.REF_ID||"").trim();
-    const it = ITEMS.find(i => i.id === refId);
-    if(!it) return;
-
-    const zone       = String(a.ZONE||"").toLowerCase();
-    const priority   = zone==="frozen"?1:zone==="slushy"?2:zone==="liquid"?3:4;
-    const value      = parseFloat(a.VALUE)     || 0;
-    const thresh     = parseFloat(a.THRESHOLD) || 0;
-    const direction  = a.DIRECTION  || "";
-    const metricType = a.METRIC_TYPE|| "";
-    const sWeek      = a.SEMAINE_RECEPTION || "";
-    const receptionId= a.RECEPTION_ID || "";
-
-    // Chercher les métriques complètes dans METRICS_DATA pour cette réception
-    const met = METRICS_DATA.find(mx =>
-      String(mx.REF_ID||"").trim() === refId &&
-      mx.RECEPTION_ID === receptionId
-    );
-
-    // Construire m.frozen complet
-    const frozen = {
-      flag:          zone === "frozen",
-      tsFlag:        metricType === "TRACKING_SIGNAL",
-      biasFlag:      metricType === "BIAS_PCT",
-      ts:            met ? (parseFloat(met.FROZEN_TS)||0)        : (metricType==="TRACKING_SIGNAL"?value:0),
-      biasPct:       met ? (parseFloat(met.FROZEN_BIAS_PCT)||0)  : (metricType==="BIAS_PCT"?value:0),
-      mad:           met ? (parseFloat(met.FROZEN_MAD)||0)       : 0,
-      cum:           met ? (parseFloat(met.FROZEN_CUM_BIAS)||0)  : Math.round(value),
-      mean:          met ? (parseFloat(met.FROZEN_MEAN_BIAS)||0) : 0,
-      totalForecast: met ? (parseFloat(met.FROZEN_TOTAL_FORECAST)||0) : "—",
-      totalCommande: met ? (parseFloat(met.FROZEN_TOTAL_COMMANDE)||0) : "—",
-      direction,
+  const alerts=[];
+  ALERTS_DATA.forEach(a=>{
+    const refId=String(a.REF_ID||"").trim();
+    const it=ITEMS.find(i=>i.id===refId);
+    if(!it)return;
+    const zone=String(a.ZONE||"").toLowerCase();
+    const priority=zone==="frozen"?1:zone==="slushy"?2:zone==="liquid"?3:4;
+    const value=parseFloat(a.VALUE)||0;
+    const direction=a.DIRECTION||"";
+    const metricType=a.METRIC_TYPE||"";
+    const receptionId=a.RECEPTION_ID||"";
+    const sWeek=a.SEMAINE_RECEPTION||"";
+    const met=METRICS_DATA.find(mx=>String(mx.REF_ID||"").trim()===refId&&mx.RECEPTION_ID===receptionId);
+    const frozen={
+      flag:zone==="frozen",tsFlag:metricType==="TRACKING_SIGNAL",biasFlag:metricType==="BIAS_PCT",
+      ts:met?parseFloat(met.FROZEN_TS)||0:(metricType==="TRACKING_SIGNAL"?value:0),
+      biasPct:met?parseFloat(met.FROZEN_BIAS_PCT)||0:(metricType==="BIAS_PCT"?value:0),
+      mad:met?parseFloat(met.FROZEN_MAD)||0:0,
+      cum:met?parseFloat(met.FROZEN_CUM_BIAS)||0:Math.round(value),
+      mean:met?parseFloat(met.FROZEN_MEAN_BIAS)||0:0,
+      totalForecast:met?parseFloat(met.FROZEN_TOTAL_FORECAST)||0:"—",
+      totalCommande:met?parseFloat(met.FROZEN_TOTAL_COMMANDE)||0:"—",
+      direction,thresh:parseFloat(a.THRESHOLD)||25,
     };
-
-    // Construire m.slushy et m.liquid
-    const slushy = {
-      flag:    zone === "slushy",
-      danger:  zone === "slushy",
-      varPct:  met ? (parseFloat(met.SLUSHY_VAR_PCT)||0) : (zone==="slushy"?value:0),
-      varAbs:  met ? (parseFloat(met.SLUSHY_VAR_ABS)||0) : 0,
-      sumCurr: met ? (parseFloat(met.SLUSHY_SUM_CURR)||0): 0,
-      sumPrev: met ? (parseFloat(met.SLUSHY_SUM_PREV)||0): 0,
-      direction,
-    };
-    const liquid = {
-      flag:    zone === "liquid",
-      danger:  zone === "liquid",
-      varPct:  met ? (parseFloat(met.LIQUID_VAR_PCT)||0) : (zone==="liquid"?value:0),
-      varAbs:  met ? (parseFloat(met.LIQUID_VAR_ABS)||0) : 0,
-      sumCurr: met ? (parseFloat(met.LIQUID_SUM_CURR)||0): 0,
-      sumPrev: met ? (parseFloat(met.LIQUID_SUM_PREV)||0): 0,
-      direction,
-    };
-
-    alerts.push({
-      item: it, zone, m: {frozen, slushy, liquid},
-      type: "drift", priority, flag: true,
-      sWeek, reception: receptionId,
-    });
+    const slushy={flag:zone==="slushy",danger:zone==="slushy",
+      varPct:met?parseFloat(met.SLUSHY_VAR_PCT)||0:(zone==="slushy"?value:0),
+      varAbs:met?parseFloat(met.SLUSHY_VAR_ABS)||0:0,direction,
+      warnT:15,dangerT:30};
+    const liquid={flag:zone==="liquid",danger:zone==="liquid",
+      varPct:met?parseFloat(met.LIQUID_VAR_PCT)||0:(zone==="liquid"?value:0),
+      varAbs:met?parseFloat(met.LIQUID_VAR_ABS)||0:0,direction,
+      warnT:20,dangerT:40};
+    alerts.push({item:it,zone,m:{frozen,slushy,liquid},type:"drift",priority,flag:true,sWeek,reception:receptionId});
   });
-
-  // Gaps calculés localement (non stockés en BDD)
-  ITEMS.forEach(it => {
-    const recs = EDI_DATA[it.id]||[];
-    const {current} = getRefPrev(recs);
-    const gaps = current ? detectGaps(current) : [];
-    if(gaps.length > 0)
-      alerts.push({item:it, zone:"gap", gaps, type:"gap", priority:4, flag:true});
+  ITEMS.forEach(it=>{
+    const recs=EDI_DATA[it.id]||[];
+    const {current}=getRefPrev(recs);
+    const gaps=current?detectGaps(current):[];
+    if(gaps.length>0) alerts.push({item:it,zone:"gap",gaps,type:"gap",priority:4,flag:true});
   });
-
-  return alerts.sort((a,b) => a.priority - b.priority);
+  return alerts.sort((a,b)=>a.priority-b.priority);
 }
 
 // Hash pour anti-doublon
@@ -469,8 +431,8 @@ let S={
 
 // ── ÉTAT CONNEXION BDD ────────────────────────────────────
 let ALERTS_CACHE = null;
-let ALERTS_DATA = [];  // Alertes chargées depuis la BDD
-let METRICS_DATA = []; // Métriques chargées depuis la BDD
+let ALERTS_DATA  = [];
+let METRICS_DATA = [];
 
 function go(step,extra={}){Object.assign(S,{step,...extra});render();}
 function update(patch){Object.assign(S,patch);render();}
@@ -822,8 +784,7 @@ function renderSearchResults(){
     <thead><tr><th>Référence</th><th>Désignation</th><th>Famille</th><th>Client T1</th><th>Statut</th><th></th></tr></thead>
     <tbody>
       ${res.map(it=>{
-        const m=calcMetrics(EDI_DATA[it.id],CFG[it.cli]||DEFAULT_CFG);
-        const hasFlag=m&&(m.frozen.flag||m.slushy.danger||m.liquid.danger);
+        const hasFlag=hasActiveAlert(it.id);
         const cl=CLIENTS.find(c=>c.id===it.cli);
         const fam=FAMILLES.find(f=>f.id===it.fam);
         return`<tr class="${hasFlag?"alert-row":""}">
@@ -988,8 +949,9 @@ function renderVerify(){
         ${ITEMS.filter(it=>(S.selectedClient==="all"||it.cli===S.selectedClient)&&(S.selectedFamille==="all"||it.fam===S.selectedFamille)).map(it=>{
           const recs=EDI_DATA[it.id];
           const {current,prev}=getRefPrev(recs)||{};
-          const m=calcMetrics(recs,CFG[it.cli]||DEFAULT_CFG);
-          const hasFlag=m&&(m.frozen.flag||m.slushy.danger||m.liquid.danger);
+          const mx=getLastMetric(it.id);
+          const m=mx?buildMFromMetric(mx,it.id):calcMetrics(recs,CFG[it.cli]||DEFAULT_CFG);
+          const hasFlag=hasActiveAlert(it.id);
           const cl=CLIENTS.find(c=>c.id===it.cli);
           const fam=FAMILLES.find(f=>f.id===it.fam);
           const gaps=current?detectGaps(current):[];
@@ -1216,8 +1178,7 @@ function renderAnalyse(){
     </div>
     <div class="flex-wrap gap-6">
       ${ITEMS.filter(i=>!S.searchQuery||i.id.toLowerCase().includes(S.searchQuery.toLowerCase())||i.label.toLowerCase().includes(S.searchQuery.toLowerCase())).map(i=>{
-        const hf=calcMetrics(EDI_DATA[i.id],CFG[i.cli]||DEFAULT_CFG);
-        const flag=hf&&(hf.frozen.flag||hf.slushy.danger||hf.liquid.danger);
+        const flag=hasActiveAlert(i.id);
         return`<button onclick="update({selectedItem:'${i.id}'})" style="
           background:${S.selectedItem===i.id?"#0B1F3A":"#F8FAFC"};
           color:${S.selectedItem===i.id?"#fff":"#1E293B"};
@@ -1397,34 +1358,19 @@ function renderReport(){
     (!rf.search||it.id.toLowerCase().includes(rf.search.toLowerCase())||it.label.toLowerCase().includes(rf.search.toLowerCase()))
   ).filter(it=>{
     if(rf.status==="all")return true;
-    const m=calcMetrics(EDI_DATA[it.id],CFG[it.cli]||DEFAULT_CFG);
-    const hasFlag=m&&(m.frozen.flag||m.slushy.danger||m.liquid.danger);
-    if(rf.status==="alert")return ALERTS_DATA.some(a=>String(a.REF_ID||"").trim()===it.id);
-    if(rf.status==="ok")return !ALERTS_DATA.some(a=>String(a.REF_ID||"").trim()===it.id);
+    if(rf.status==="alert")return hasActiveAlert(it.id);
+    if(rf.status==="ok")return !hasActiveAlert(it.id);
     return true;
   });
 
   const allAlerts=getAllAlerts();
 
-  // KPIs agrégés par famille — alertes depuis BDD, MAD depuis METRICS_DATA
+  // KPIs agrégés par famille
   const famKPIs=FAMILLES.map(fam=>{
-    const items=ITEMS.filter(i=>
-      i.fam===fam.id &&
-      (rf.client==="all"||i.cli===rf.client)
-    );
-    // MAD moyen depuis dernière métrique en BDD par ref
-    let totalMad=0, n=0;
-    items.forEach(it=>{
-      const mets=METRICS_DATA.filter(mx=>String(mx.REF_ID||"").trim()===it.id);
-      if(mets.length){
-        totalMad+=parseFloat(mets[mets.length-1].FROZEN_MAD)||0;
-        n++;
-      }
-    });
-    // Alertes depuis BDD
-    const flagCount=ALERTS_DATA.filter(a=>
-      items.some(it=>String(a.REF_ID||"").trim()===it.id)
-    ).length;
+    const items=ITEMS.filter(i=>i.fam===fam.id&&(rf.client==="all"||i.cli===rf.client));
+    let totalMad=0,n=0;
+    items.forEach(it=>{const mx=getLastMetric(it.id);if(mx){totalMad+=parseFloat(mx.FROZEN_MAD)||0;n++;}});
+    const flagCount=ALERTS_DATA.filter(a=>items.some(it=>String(a.REF_ID||"").trim()===it.id)).length;
     return{fam,items,avgMad:n>0?Math.round(totalMad/n):0,flagCount,n};
   });
 
@@ -1477,21 +1423,9 @@ function renderReport(){
       </tr></thead>
       <tbody>
         ${famKPIs.map(({fam,items,avgMad,flagCount,n})=>{
-          // SS Total : depuis METRICS_DATA (MAD réel) sinon SS_ACTUEL de ITEMS
-          const totalSS=items.reduce((a,it)=>{
-            const mets=METRICS_DATA.filter(mx=>String(mx.REF_ID||"").trim()===it.id);
-            const mad=mets.length?parseFloat(mets[mets.length-1].FROZEN_MAD)||0:0;
-            const svc=CFG[it.cli]?.service||95;
-            return a+(mad>0?calcSS(mad,svc):(SS_DATA[it.id]?.ss||0));
-          },0);
-          // Valeur stock : SS_ACTUEL × PRIX_UNITAIRE depuis ITEMS
+          const totalSS=items.reduce((a,it)=>{const mx=getLastMetric(it.id);const mad=mx?parseFloat(mx.FROZEN_MAD)||0:0;return a+calcSS(mad,CFG[it.cli]?.service||95);},0);
           const totalVal=items.reduce((a,it)=>a+(SS_DATA[it.id]?.ss||it.ss_actuel||0)*(it.prix||0),0);
-          // Stabilité : % de refs SANS alerte active (pas ratio alertes/refs)
-          const refsWithAlert=new Set(
-            ALERTS_DATA
-              .filter(a=>items.some(it=>String(a.REF_ID||"").trim()===it.id))
-              .map(a=>String(a.REF_ID||"").trim())
-          ).size;
+          const refsWithAlert=new Set(ALERTS_DATA.filter(a=>items.some(it=>String(a.REF_ID||"").trim()===it.id)).map(a=>String(a.REF_ID||"").trim())).size;
           const stability=items.length>0?Math.round((1-refsWithAlert/items.length)*100):100;
           const sc=stability>=85?C.ok:stability>=65?C.warn:C.danger;
           return`<tr class="family-row">
@@ -1548,12 +1482,13 @@ function renderReport(){
       <tbody>
         ${filtered.map(it=>{
           const cfg=CFG[it.cli]||DEFAULT_CFG;
-          const m=calcMetrics(EDI_DATA[it.id],cfg);
+          const mx2=getLastMetric(it.id);
+          const m=mx2?buildMFromMetric(mx2,it.id):null;
           const p=classifyDemand(EDI_DATA[it.id]);
-          const ssCalc=calcSS(m?m.frozen.mad:0,cfg.service);
-          const ssAct=SS_DATA[it.id]?.ss||0;
+          const ssCalc=m?calcSS(m.frozen.mad,cfg.service):(SS_DATA[it.id]?.ss||0);
+          const ssAct=SS_DATA[it.id]?.ss||it.ss_actuel||0;
           const gap=ssCalc-ssAct;
-          const hasFlag=ALERTS_DATA.some(a=>String(a.REF_ID||"").trim()===it.id);
+          const hasFlag=hasActiveAlert(it.id);
           const cl=CLIENTS.find(c=>c.id===it.cli);
           const fam=FAMILLES.find(f=>f.id===it.fam);
           return`<tr class="${hasFlag?"alert-row":""}">
@@ -1573,7 +1508,7 @@ function renderReport(){
             <td style="text-align:center;font-weight:700;color:${C.teal}">${ssCalc}</td>
             <td style="text-align:center">${ssAct}</td>
             <td style="text-align:center;font-weight:700;color:${gap>0?C.danger:C.ok}">${gap>0?"+":""}${gap}</td>
-            <td>${ALERTS_DATA.some(a=>String(a.REF_ID||"").trim()===it.id)?`<span class="badge b-danger">Alerte</span>`:`<span class="badge b-ok">OK</span>`}</td>
+            <td>${hasActiveAlert(it.id)?`<span class="badge b-danger">Alerte</span>`:`<span class="badge b-ok">OK</span>`}</td>
           </tr>`;
         }).join("")}
       </tbody>
@@ -1589,29 +1524,19 @@ function renderClient(){
   const clientItems=ITEMS.filter(i=>i.cli===S.selectedClient);
   const score=clientScore(S.selectedClient);
   const sc=score>=85?C.ok:score>=65?C.warn:C.danger;
-  // Alertes et métriques depuis la BDD — source unique de vérité
-  const clientAlerts  = ALERTS_DATA.filter(a => String(a.CLIENT_ID||"").trim() === S.selectedClient);
-  const totalAlerts   = [...new Set(clientAlerts.map(a => String(a.REF_ID||"").trim()))].length;
-  const clientMetrics = clientItems.map(it => {
-    const mets = METRICS_DATA.filter(mx => String(mx.REF_ID||"").trim() === it.id);
-    return mets.length ? mets[mets.length-1] : null;
-  }).filter(Boolean);
-  const avgBias = clientMetrics.length
-    ? Math.round(clientMetrics.reduce((a,mx)=>a+Math.abs(parseFloat(mx.FROZEN_BIAS_PCT)||0),0)/clientMetrics.length*10)/10
-    : 0;
-  const stableCount = clientItems.filter(it => classifyDemand(EDI_DATA[it.id]).type==="Stable").length;
-  const allM = clientItems.map(it=>({it, m:calcMetrics(EDI_DATA[it.id],cfg)}));
+  const clientAlerts=ALERTS_DATA.filter(a=>String(a.CLIENT_ID||"").trim()===S.selectedClient);
+  const totalAlerts=[...new Set(clientAlerts.map(a=>String(a.REF_ID||"").trim()))].length;
+  const clientMetrics=clientItems.map(it=>{const mets=METRICS_DATA.filter(mx=>String(mx.REF_ID||"").trim()===it.id);return mets.length?mets[mets.length-1]:null;}).filter(Boolean);
+  const avgBias=clientMetrics.length?Math.round(clientMetrics.reduce((a,mx)=>a+Math.abs(parseFloat(mx.FROZEN_BIAS_PCT)||0),0)/clientMetrics.length*10)/10:0;
+  const stableCount=clientItems.filter(it=>classifyDemand(EDI_DATA[it.id]).type==="Stable").length;
+  const allM=clientItems.map(it=>({it,m:(()=>{const mx=getLastMetric(it.id);return mx?buildMFromMetric(mx,it.id):calcMetrics(EDI_DATA[it.id],cfg);})()}));
 
   // Score par famille pour ce client
   const famScores=FAMILLES.map(fam=>{
     const items=clientItems.filter(i=>i.fam===fam.id);
     if(!items.length)return null;
     let flags=0;
-    // Compter alertes BDD pour cette famille/client
-    flags = ALERTS_DATA.filter(a =>
-      String(a.CLIENT_ID||"").trim() === S.selectedClient &&
-      items.some(it => String(a.REF_ID||"").trim() === it.id)
-    ).length;
+    flags=ALERTS_DATA.filter(a=>String(a.CLIENT_ID||"").trim()===S.selectedClient&&items.some(it=>String(a.REF_ID||""  ).trim()===it.id)).length;
     return{fam,items,score:Math.max(0,Math.round((1-flags/(items.length*3))*100)),flags};
   }).filter(Boolean);
 
@@ -1712,30 +1637,23 @@ function renderClient(){
             <div class="text-sm text-muted">Score ${score}/100 — Pas de dérive significative</div>
           </div>`
         :clientAlerts.map(a=>{
-          const refId = String(a.REF_ID||"").trim();
-          const it2   = ITEMS.find(i=>i.id===refId)||{id:refId,label:refId,fam:""};
-          const fam   = FAMILLES.find(f=>f.id===it2.fam);
-          const met   = METRICS_DATA.find(mx=>String(mx.REF_ID||"").trim()===refId && mx.RECEPTION_ID===a.RECEPTION_ID);
-          const biasPct  = met?parseFloat(met.FROZEN_BIAS_PCT)||0:parseFloat(a.VALUE)||0;
-          const cum      = met?parseFloat(met.FROZEN_CUM_BIAS)||0:0;
-          const ts       = met?parseFloat(met.FROZEN_TS)||0:0;
-          const zone     = String(a.ZONE||"").toLowerCase();
-          const varPct   = met?(zone==="slushy"?parseFloat(met.SLUSHY_VAR_PCT)||0:parseFloat(met.LIQUID_VAR_PCT)||0):parseFloat(a.VALUE)||0;
+          const refId=String(a.REF_ID||"").trim();
+          const it2=ITEMS.find(i=>i.id===refId)||{id:refId,label:refId,fam:""};
+          const fam2=FAMILLES.find(f=>f.id===it2.fam);
+          const met2=METRICS_DATA.find(mx=>String(mx.REF_ID||"").trim()===refId&&mx.RECEPTION_ID===a.RECEPTION_ID);
+          const biasPct=met2?parseFloat(met2.FROZEN_BIAS_PCT)||0:parseFloat(a.VALUE)||0;
+          const cum2=met2?parseFloat(met2.FROZEN_CUM_BIAS)||0:0;
+          const ts2=met2?parseFloat(met2.FROZEN_TS)||0:0;
+          const zone2=String(a.ZONE||"").toLowerCase();
+          const varPct2=met2?(zone2==="slushy"?parseFloat(met2.SLUSHY_VAR_PCT)||0:parseFloat(met2.LIQUID_VAR_PCT)||0):parseFloat(a.VALUE)||0;
+
           return`<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:10px 12px;margin-bottom:8px">
             <div style="font-size:11px;font-weight:700;margin-bottom:4px">
               ${it2.id} — ${it2.label}
-              <span style="font-size:10px;color:${fam?.color};margin-left:6px">${fam?.label||""}</span>
-              <span style="font-size:10px;background:${zone==="frozen"?C.danger:C.warn};color:#fff;padding:1px 6px;border-radius:4px;margin-left:6px">${zone==="frozen"?"Frozen":zone==="slushy"?"Slushy":"Liquid"}</span>
+              <span style="font-size:10px;color:${fam2?.color};margin-left:6px">${fam2?.label||""}</span>
             </div>
             <div style="font-size:11px;color:#64748B;line-height:1.6">
-              ${zone==="frozen"
-                ?`Biais : <strong style="color:${C.danger}">${biasPct>0?"+":""}${biasPct}%</strong>
-                  · Écart cumulé : <strong>${cum>0?"+":""}${cum} u.</strong>
-                  · TS = <strong style="color:${C.danger}">${ts}</strong>
-                  <br>→ Risque : ${cum>0?"surstock / transport non planifié":"rupture / transport exceptionnel"}`
-                :`Variation : <strong style="color:${C.warn}">${varPct>0?"+":""}${varPct}%</strong>
-                  · Seuil : ${zone==="slushy"?"±15%":"±20%"}
-                  <br>→ ${zone==="slushy"?"Impact PDP semaines S3-S5":"Réviser approvisionnements long terme"}`}
+              ${zone2==="frozen"?`Biais : <strong style="color:${C.danger}">${biasPct>0?"+":""}${biasPct}%</strong> · Écart : <strong>${cum2>0?"+":""}${cum2} u.</strong> · TS = <strong>${ts2}</strong><br>→ ${cum2>0?"Risque surstock":"Risque rupture"}`:`Variation : <strong style="color:${C.warn}">${varPct2>0?"+":""}${varPct2}%</strong> · Seuil ${zone2==="slushy"?"±15%":"±20%"}<br>→ ${zone2==="slushy"?"Impact PDP S3-S5":"Réviser approvisionnements"}`}
             </div>
           </div>`;
         }).join("")}
@@ -1858,7 +1776,6 @@ function handleEDIFiles(files){
     r.readAsText(f,"utf-8");
   }));
   Promise.all(pendingFiles).then(parsed=>{
-    // Attacher le hash à chaque fichier — la déduplication réelle est faite côté BDD
     const toImport=parsed.map(p=>({...p,hash:hashEDI(p)}));
     S.importedFiles=toImport;
 
@@ -1917,9 +1834,9 @@ function exportCSV(){
   FAMILLES.forEach(fam=>{
     const items=ITEMS.filter(i=>i.fam===fam.id);
     let totalMad=0,flags=0,n=0;
-    items.forEach(it=>{const m=calcMetrics(EDI_DATA[it.id],CFG[it.cli]||DEFAULT_CFG);if(m){totalMad+=m.frozen.mad;if(m.frozen.flag||m.slushy.danger)flags++;n++;}});
+    items.forEach(it=>{const mx=getLastMetric(it.id);const m=mx?buildMFromMetric(mx,it.id):null;if(m){totalMad+=m.frozen.mad;if(hasActiveAlert(it.id))flags++;n++;}});
     const avgMad=n>0?Math.round(totalMad/n):0;
-    const totalSS=items.reduce((a,it)=>{const m=calcMetrics(EDI_DATA[it.id],CFG[it.cli]||DEFAULT_CFG);return a+calcSS(m?m.frozen.mad:0,CFG[it.cli]?.service||95);},0);
+    const totalSS=items.reduce((a,it)=>{const mx=getLastMetric(it.id);const mad=mx?parseFloat(mx.FROZEN_MAD)||0:0;return a+calcSS(mad,CFG[it.cli]?.service||95);},0);
     rows.push([fam.label,items.length,avgMad,totalSS,flags,n>0?Math.round((1-flags/n)*100)+"%":"—"]);
   });
   rows.push([""],["=== NIVEAU MPS — PAR RÉFÉRENCE ==="],
@@ -1930,9 +1847,10 @@ function exportCSV(){
      "SS Calculé","SS Actuel","Gap SS","Typologie","Statut"]);
   ITEMS.forEach(it=>{
     const cfg=CFG[it.cli]||DEFAULT_CFG;
-    const m=calcMetrics(EDI_DATA[it.id],cfg);
+    const mx3=getLastMetric(it.id);
+    const m=mx3?buildMFromMetric(mx3,it.id):null;
     const p=classifyDemand(EDI_DATA[it.id]);
-    const ssCalc=calcSS(m?m.frozen.mad:0,cfg.service);
+    const ssCalc=m?calcSS(m.frozen.mad,cfg.service):(SS_DATA[it.id]?.ss||0);
     const ssAct=SS_DATA[it.id]?.ss||0;
     const fam=FAMILLES.find(f=>f.id===it.fam);
     const cl=CLIENTS.find(c=>c.id===it.cli);
@@ -2135,7 +2053,6 @@ async function importToDB(parsedFiles) {
 
     if (!rows.length) { errors.push(f.fileName + ": aucune référence reconnue"); continue; }
 
-    // Si SEMAINE_RECEPTION absente du CSV, générer depuis RECEPTION_NUM pour garantir l'unicité
     const sWeekFinal = f.meta.sWeek || f.meta.reception || ("R" + Date.now());
     const payload = {
       hash:     f.hash || "",
@@ -2145,7 +2062,7 @@ async function importToDB(parsedFiles) {
         date:      f.meta.date,
         sWeek:     sWeekFinal,
         year:      f.meta.year  || new Date().getFullYear(),
-        revNum:    parseInt(f.meta.revNum) || 1,
+        revNum:    f.meta.revNum || 1,
         emetteur:  f.meta.emetteur || "",
       },
       rows,
@@ -2164,7 +2081,7 @@ async function importToDB(parsedFiles) {
   if (errors.length) showToast("Erreur: " + errors[0], "ti-alert-triangle", 5000);
   else showToast(`${totalImported} référence(s) importée(s)`, "ti-circle-check");
 
-  await loadFromDB();  // recharge aussi ALERTS_DATA
+  await loadFromDB();
   S.importResult = true;
   S.importedFiles = [];
   go("verify");
@@ -2309,7 +2226,8 @@ async function printReport(){
   y+=7;
   ITEMS.forEach((it,idx)=>{
     const cfg=CFG[it.cli]||DEFAULT_CFG;
-    const m=calcMetrics(EDI_DATA[it.id],cfg);
+    const mx4=getLastMetric(it.id);
+    const m=mx4?buildMFromMetric(mx4,it.id):null;
     const cl=CLIENTS.find(c=>c.id===it.cli)||{label:it.cli};
     const fam=FAMILLES.find(f=>f.id===it.fam)||{label:it.fam};
     const ssCalc=calcSS(m?m.frozen.mad:0,cfg.service||95);
