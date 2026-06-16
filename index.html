@@ -1747,33 +1747,17 @@ function handleEDIFiles(files){
     r.readAsText(f,"utf-8");
   }));
   Promise.all(pendingFiles).then(parsed=>{
-    // Anti-doublon
-    const toImport=[];
-    const duplicates=[];
-    parsed.forEach(p=>{
-      const h=hashEDI(p);
-      if(IMPORT_LOG.find(l=>l.hash===h)){
-        duplicates.push(p.fileName);
-      } else {
-        toImport.push({...p,hash:h});
-      }
-    });
+    // Attacher le hash à chaque fichier — la déduplication réelle est faite côté BDD
+    const toImport=parsed.map(p=>({...p,hash:hashEDI(p)}));
     S.importedFiles=toImport;
 
     const el=document.getElementById("ediFileList");
-    if(el)el.innerHTML=[
-      ...toImport.map(p=>`<div style="display:flex;align-items:center;gap:8px;margin-top:6px;padding:7px 10px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0">
+    if(el)el.innerHTML=toImport.map(p=>`<div style="display:flex;align-items:center;gap:8px;margin-top:6px;padding:7px 10px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0">
         <i class="ti ti-file-spreadsheet" style="color:${C.ok}"></i>
         <span style="flex:1;font-size:12px;font-weight:600">${p.fileName}</span>
         <span class="text-muted text-sm">${p.rows.length} réf · ${p.meta.sWeek||"—"}</span>
-        <span class="badge b-ok">✓ Nouveau</span>
-      </div>`),
-      ...duplicates.map(f=>`<div style="display:flex;align-items:center;gap:8px;margin-top:6px;padding:7px 10px;background:#FEF3C7;border-radius:8px;border:1px solid #FDE68A">
-        <i class="ti ti-alert-triangle" style="color:${C.warn}"></i>
-        <span style="flex:1;font-size:12px;font-weight:600">${f}</span>
-        <span class="badge b-warn">Déjà importé — ignoré</span>
-      </div>`)
-    ].join("");
+        <span class="badge b-ok">✓ Prêt</span>
+      </div>`).join("");
 
     const prev=document.getElementById("importPreview");
     if(prev&&toImport.length>0)prev.innerHTML=`<div style="background:#EFF9FF;border:1px solid #BAE6FD;border-radius:8px;padding:10px 12px;font-size:12px">
