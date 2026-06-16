@@ -155,6 +155,19 @@ input,select,textarea{font-family:inherit}
 .text-warn{color:#F59E0B}
 .fw-700{font-weight:700}
 
+.login-page{min-height:100vh;background:linear-gradient(135deg,#0B1F3A 0%,#1A4A8A 100%);display:flex;align-items:center;justify-content:center}
+.login-card{background:#fff;border-radius:20px;padding:40px;width:400px;box-shadow:0 24px 80px #0006}
+.login-logo{text-align:center;margin-bottom:32px}
+.login-logo-text{font-size:32px;font-weight:900;color:#0B1F3A;letter-spacing:-1px}
+.login-logo-accent{color:#00A8E8;font-weight:300;letter-spacing:3px}
+.login-tagline{font-size:12px;color:#64748B;margin-top:6px;letter-spacing:.5px}
+.login-input{width:100%;padding:11px 14px;border:1.5px solid #E2E8F0;border-radius:9px;font-size:13px;outline:none;transition:border .15s;margin-bottom:12px}
+.login-input:focus{border-color:#00A8E8}
+.login-btn{width:100%;padding:12px;background:#0B1F3A;color:#fff;border:none;border-radius:9px;font-size:14px;font-weight:700;cursor:pointer;transition:all .15s;margin-top:4px}
+.login-btn:hover{background:#1A4A8A}
+.login-hint{font-size:11px;color:#94A3B8;text-align:center;margin-top:14px}
+
+
 @media(max-width:768px){
   .grid-2,.grid-3,.grid-4{grid-template-columns:1fr}
   .steps-bar{gap:0}
@@ -173,7 +186,7 @@ input,select,textarea{font-family:inherit}
 
 // ── DB CONFIG ─────────────────────────────────────────────
 // URL câblée — peut être surchargée via le panneau Config
-const GAS_URL_DEFAULT = "https://script.google.com/macros/s/AKfycbwZGbBc9YQPx568MoOy8sUH4eYCRshkQeGei1rWOtor-HHeYpf93EQbev3gNGC3F7n5MA/exec";
+const GAS_URL_DEFAULT = "https://script.google.com/macros/s/AKfycbwofZE_NaRemL-D14TPsT5f1pj96Sk9JJqGYZXi6WbxGYo8X0yzUIG9AC9uKXSBeXH7Lw/exec";
 
 // ── CONSTANTS ──────────────────────────────────────────────
 const C={
@@ -200,6 +213,7 @@ let SS      = {};  // { refId: { ss, uom } }
 let ALERTS_CACHE = null; // cache invalidé à chaque action
 
 let S={
+  page:"login",  // login | app
   step:"home",
   importedFiles:[],
   importResult:false,
@@ -211,6 +225,7 @@ let S={
   showConfig:false,
   toast:null,
   gasError:null,
+  reportFilter:{client:"all",famille:"all",status:"all",search:""},
 };
 
 // ── DB API ───────────────────────────────────────────────
@@ -484,6 +499,10 @@ function showToast(msg,icon="ti-circle-check",ms=3500){
 // ── RENDER ────────────────────────────────────────────────
 function render(){
   const app=document.getElementById("app");
+  if(S.page==="login"){
+    app.innerHTML=renderLogin()+(S.toast?renderToast():"");
+    return;
+  }
   app.innerHTML=renderTopBar()+renderStepsBar()+
     `<div class="main">`+
       (S.gasError?renderGASError():"")+ 
@@ -495,6 +514,40 @@ function render(){
     renderConfigModal();
   attachEvents();
 }
+
+function renderLogin(){
+  return`<div class="login-page">
+    <div class="login-card">
+      <div class="login-logo">
+        <div class="login-logo-text">OPTI<span class="login-logo-accent">PLAN</span></div>
+        <div style="width:48px;height:3px;background:linear-gradient(90deg,#00A8E8,#00C9B1);border-radius:99px;margin:10px auto"></div>
+        <div class="login-tagline">DE LA DEMANDE CLIENT À L'EXCELLENCE OPÉRATIONNELLE</div>
+        <div style="margin-top:8px;font-size:10px;color:#CBD5E1;letter-spacing:.5px">DEMAND GOVERNANCE · MODULE 1</div>
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="font-size:11px;font-weight:700;color:#64748B;display:block;margin-bottom:5px">Identifiant</label>
+        <input class="login-input" type="text" placeholder="Votre identifiant" id="loginUser" value="adv.egbs">
+      </div>
+      <div style="margin-bottom:6px">
+        <label style="font-size:11px;font-weight:700;color:#64748B;display:block;margin-bottom:5px">Mot de passe</label>
+        <input class="login-input" type="password" placeholder="••••••••" id="loginPass" value="optiplan2024"
+          onkeydown="if(event.key==='Enter')doLogin()">
+      </div>
+      <button class="login-btn" onclick="doLogin()">
+        <i class="ti ti-login" style="margin-right:6px"></i>Accéder à OPTIPLAN
+      </button>
+      <div class="login-hint">EGBS © 2024 · Logique APICS CPIM/CSCP<br>Propulsé par la Supply Chain Intelligence</div>
+    </div>
+  </div>`;
+}
+
+
+function doLogin(){
+  S.page="app";
+  render();
+  setTimeout(()=>showToast("Bienvenue dans OPTIPLAN — Module Demand Governance","ti-home-2"),400);
+}
+
 
 function renderGASError(){
   return`<div style="background:#FEE2E2;border:1px solid #FCA5A5;border-radius:10px;padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px">
@@ -564,8 +617,9 @@ function renderStepsBar(){
     {id:"verify",  icon:"ti-clipboard-check",   label:"2 · Vérifier"},
     {id:"alerts",  icon:"ti-alert-triangle",    label:`3 · Alertes${alerts.length>0?" ("+alerts.length+")":""}`,hasAlert:alerts.length>0},
     {id:"analyse", icon:"ti-zoom-in",            label:"4 · Analyser"},
-    {id:"client",  icon:"ti-building-factory-2",label:"5 · Vue Client T1"},
-    {id:"share",   icon:"ti-share",              label:"6 · Partager"},
+    {id:"report",  icon:"ti-file-analytics",    label:"5 · Rapport"},
+    {id:"client",  icon:"ti-building-factory-2",label:"6 · Vue Client T1"},
+    {id:"share",   icon:"ti-share",              label:"7 · Partager"},
   ];
   return`<div class="steps-bar">
     ${steps.map((st,i)=>{
@@ -1186,6 +1240,110 @@ function renderAnalyse(){
   </div>`}`;
 }
 
+function renderReport(){
+  if(!GS_CONNECTED)return renderNotConnected();
+  const rf=S.reportFilter;
+  const allAlerts=getAllAlerts();
+
+  const filtered=ITEMS.filter(it=>{
+    const matchClient=rf.client==="all"||it.cli===rf.client;
+    const matchSearch=!rf.search||it.id.toLowerCase().includes(rf.search.toLowerCase())||it.label.toLowerCase().includes(rf.search.toLowerCase());
+    const m=calcMetrics(EDI_DATA[it.id],CFG[it.cli]||DEFAULT_CFG);
+    const hasFlag=m&&Object.values(m).some(v=>v.flag);
+    const matchStatus=rf.status==="all"||(rf.status==="alert"&&hasFlag)||(rf.status==="ok"&&!hasFlag);
+    return matchClient&&matchSearch&&matchStatus;
+  });
+
+  return`
+  <div class="card mb-16">
+    <div class="flex-between mb-12">
+      <div>
+        <div class="card-title">Rapport exhaustif — Analyse complète</div>
+        <div class="card-sub">${filtered.length} référence(s) · ${allAlerts.length} alerte(s) active(s)</div>
+      </div>
+      <div class="flex gap-8">
+        <button class="btn btn-ghost btn-sm" onclick="exportCSV()"><i class="ti ti-file-spreadsheet"></i> CSV</button>
+        <button class="btn btn-ghost btn-sm" onclick="printReport()"><i class="ti ti-file-type-pdf"></i> PDF</button>
+        <button class="btn btn-primary btn-sm" onclick="showEmailModal()"><i class="ti ti-mail-forward"></i> Email</button>
+      </div>
+    </div>
+    <div class="flex gap-8" style="flex-wrap:wrap">
+      <div class="search-box" style="width:240px">
+        <i class="ti ti-search"></i>
+        <input type="text" placeholder="Rechercher..." value="${rf.search}"
+          oninput="update({reportFilter:{...S.reportFilter,search:this.value}})">
+      </div>
+      <select onchange="update({reportFilter:{...S.reportFilter,client:this.value}})"
+        style="padding:7px 12px;border:1px solid #E2E8F0;border-radius:8px;font-size:12px;outline:none">
+        <option value="all">Tous les clients T1</option>
+        ${CLIENTS.map(c=>`<option value="${c.id}"${rf.client===c.id?" selected":""}>${c.label}</option>`).join("")}
+      </select>
+      <div class="flex gap-8">
+        ${["all","alert","ok"].map(s=>{
+          const labels={all:"Toutes",alert:"Alertes",ok:"OK"};
+          return`<button onclick="update({reportFilter:{...S.reportFilter,status:'${s}'}})" style="
+            background:${rf.status===s?"#0B1F3A":"#fff"};
+            color:${rf.status===s?"#fff":"#64748B"};
+            border:1px solid ${rf.status===s?"#0B1F3A":"#E2E8F0"};
+            border-radius:99px;padding:5px 14px;font-size:12px;font-weight:600">
+            ${labels[s]}
+          </button>`;
+        }).join("")}
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <table class="tbl">
+      <thead><tr>
+        <th>Référence</th><th>Désignation</th><th>Client T1</th><th>Famille</th>
+        <th>Biais Figé</th><th>TS Figé</th><th>Biais S-F</th><th>Biais Flex</th>
+        <th>SS Calc.</th><th>SS Act.</th><th>Gap SS</th><th>Typolo.</th><th>Statut</th><th></th>
+      </tr></thead>
+      <tbody>
+        ${filtered.map(it=>{
+          const cfg=CFG[it.cli]||DEFAULT_CFG;
+          const m=calcMetrics(EDI_DATA[it.id],cfg);
+          const cl=CLIENTS.find(c=>c.id===it.cli)||{label:it.cli,color:C.blue};
+          const recs=EDI_DATA[it.id]||[];
+          const avgMad=avgMadFromMetrics(m);
+          const ss=calcSS(avgMad,cfg.service);
+          const ssAct=SS[it.id]?.ss||0;
+          const gap=ss-ssAct;
+          const p=classifyDemand(recs);
+          const hasFlag=m&&Object.values(m).some(v=>v.flag);
+
+          if(!m)return`<tr>
+            <td class="fw-700" style="color:${C.blue};font-family:monospace">${it.id}</td>
+            <td>${it.label}</td>
+            <td style="color:${cl.color||C.blue};font-weight:600">${cl.label}</td>
+            <td><span class="badge badge-neutral">${it.famille||"—"}</span></td>
+            <td colspan="8" style="color:#94A3B8;font-style:italic;font-size:11px">Moins de 2 réceptions EDI</td>
+            <td><button class="btn btn-ghost btn-sm" onclick="go('analyse',{selectedItem:'${it.id}'})"><i class="ti ti-zoom-in"></i></button></td>
+          </tr>`;
+
+          return`<tr class="${hasFlag?"alert-row":""}">
+            <td class="fw-700" style="color:${C.blue};font-family:monospace;font-size:11px">${it.id}</td>
+            <td style="font-size:12px">${it.label}</td>
+            <td style="color:${cl.color||C.blue};font-weight:600;font-size:11px">${cl.label}</td>
+            <td><span class="badge badge-neutral" style="font-size:10px">${it.famille||"—"}</span></td>
+            <td style="font-weight:700;color:${m.frozen.flag?C.danger:C.ok};font-size:12px">${m.frozen.biasPct>0?"+":""}${m.frozen.biasPct}%</td>
+            <td style="font-weight:700;color:${m.frozen.tsFlag?C.danger:C.ok};font-size:12px">${m.frozen.ts}<span style="font-size:9px;color:#94A3B8"> /±${m.frozen.thresh}</span></td>
+            <td style="color:${m.slushy.flag?C.danger:"#64748B"};font-size:12px">${m.slushy.biasPct>0?"+":""}${m.slushy.biasPct}%</td>
+            <td style="color:${m.liquid.flag?C.danger:"#64748B"};font-size:12px">${m.liquid.biasPct>0?"+":""}${m.liquid.biasPct}%</td>
+            <td style="font-weight:700;color:${C.teal};font-size:12px">${ss}</td>
+            <td style="font-size:12px">${ssAct}</td>
+            <td style="font-weight:700;color:${gap>0?C.danger:C.ok};font-size:12px">${gap>0?"+":""}${gap}</td>
+            <td><span class="badge badge-neutral" style="color:${p.color};font-size:10px">${p.type}</span></td>
+            <td>${hasFlag?`<span class="badge badge-danger">Alerte</span>`:`<span class="badge badge-ok">OK</span>`}</td>
+            <td><button class="btn btn-ghost btn-sm" onclick="go('analyse',{selectedItem:'${it.id}'})"><i class="ti ti-zoom-in"></i></button></td>
+          </tr>`;
+        }).join("")}
+      </tbody>
+    </table>
+  </div>`;
+}
+
 // ── STEP 5: CLIENT T1 ─────────────────────────────────────
 function renderClient(){
   if(!GS_CONNECTED)return renderNotConnected();
@@ -1503,6 +1661,7 @@ function renderStep(){
     case"verify":  return renderVerify();
     case"alerts":  return renderAlerts();
     case"analyse": return renderAnalyse();
+    case"report":  return renderReport();
     case"client":  return renderClient();
     case"share":   return renderShare();
     default:       return renderHome();
