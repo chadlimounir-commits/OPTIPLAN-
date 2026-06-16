@@ -361,73 +361,78 @@ function clientScore(clientId){
 }
 
 function getAllAlerts(){
-  // Les alertes viennent directement de la BDD (feuille ALERTS)
-  // Mappées vers la structure UI attendue par renderAlerts()
   if(!ALERTS_DATA||!ALERTS_DATA.length) return [];
 
   const alerts = [];
   ALERTS_DATA.forEach(a => {
-    const it = ITEMS.find(i => i.id === String(a.REF_ID||"").trim());
+    const refId = String(a.REF_ID||"").trim();
+    const it = ITEMS.find(i => i.id === refId);
     if(!it) return;
 
-    const zone = String(a.ZONE||"").toLowerCase();
-    const priority = zone==="frozen"?1:zone==="slushy"?2:zone==="liquid"?3:4;
+    const zone       = String(a.ZONE||"").toLowerCase();
+    const priority   = zone==="frozen"?1:zone==="slushy"?2:zone==="liquid"?3:4;
+    const value      = parseFloat(a.VALUE)     || 0;
+    const thresh     = parseFloat(a.THRESHOLD) || 0;
+    const direction  = a.DIRECTION  || "";
+    const metricType = a.METRIC_TYPE|| "";
+    const sWeek      = a.SEMAINE_RECEPTION || "";
+    const receptionId= a.RECEPTION_ID || "";
 
-    // Reconstruire les métriques minimales pour l'affichage
-    const value   = parseFloat(a.VALUE)  || 0;
-    const thresh  = parseFloat(a.THRESHOLD) || 0;
-    const direction = a.DIRECTION || "";
-    const metricType = a.METRIC_TYPE || "";
+    // Chercher les métriques complètes dans METRICS_DATA pour cette réception
+    const met = METRICS_DATA.find(mx =>
+      String(mx.REF_ID||"").trim() === refId &&
+      mx.RECEPTION_ID === receptionId
+    );
 
-    // Structure m compatible avec renderAlerts
-    const mZone = {
-      flag:      true,
-      tsFlag:    metricType === "TRACKING_SIGNAL",
-      biasFlag:  metricType === "BIAS_PCT",
-      ts:        metricType === "TRACKING_SIGNAL" ? value : "—",
-      biasPct:   metricType === "BIAS_PCT"        ? value : "—",
-      varPct:    metricType === "VAR_PCT"         ? value : "—",
-      thresh,
-      cum:       metricType === "BIAS_PCT" ? Math.round(value * 10) : value,
+    // Construire m.frozen complet
+    const frozen = {
+      flag:          zone === "frozen",
+      tsFlag:        metricType === "TRACKING_SIGNAL",
+      biasFlag:      metricType === "BIAS_PCT",
+      ts:            met ? (parseFloat(met.FROZEN_TS)||0)        : (metricType==="TRACKING_SIGNAL"?value:0),
+      biasPct:       met ? (parseFloat(met.FROZEN_BIAS_PCT)||0)  : (metricType==="BIAS_PCT"?value:0),
+      mad:           met ? (parseFloat(met.FROZEN_MAD)||0)       : 0,
+      cum:           met ? (parseFloat(met.FROZEN_CUM_BIAS)||0)  : Math.round(value),
+      mean:          met ? (parseFloat(met.FROZEN_MEAN_BIAS)||0) : 0,
+      totalForecast: met ? (parseFloat(met.FROZEN_TOTAL_FORECAST)||0) : "—",
+      totalCommande: met ? (parseFloat(met.FROZEN_TOTAL_COMMANDE)||0) : "—",
       direction,
-      totalForecast: "—",
-      totalCommande: "—",
     };
 
-    const m = {frozen:{flag:false,biasPct:0,ts:0},
-               slushy:{flag:false,varPct:0},
-               liquid:{flag:false,varPct:0}};
-    m[zone] = mZone;
+    // Construire m.slushy et m.liquid
+    const slushy = {
+      flag:    zone === "slushy",
+      danger:  zone === "slushy",
+      varPct:  met ? (parseFloat(met.SLUSHY_VAR_PCT)||0) : (zone==="slushy"?value:0),
+      varAbs:  met ? (parseFloat(met.SLUSHY_VAR_ABS)||0) : 0,
+      sumCurr: met ? (parseFloat(met.SLUSHY_SUM_CURR)||0): 0,
+      sumPrev: met ? (parseFloat(met.SLUSHY_SUM_PREV)||0): 0,
+      direction,
+    };
+    const liquid = {
+      flag:    zone === "liquid",
+      danger:  zone === "liquid",
+      varPct:  met ? (parseFloat(met.LIQUID_VAR_PCT)||0) : (zone==="liquid"?value:0),
+      varAbs:  met ? (parseFloat(met.LIQUID_VAR_ABS)||0) : 0,
+      sumCurr: met ? (parseFloat(met.LIQUID_SUM_CURR)||0): 0,
+      sumPrev: met ? (parseFloat(met.LIQUID_SUM_PREV)||0): 0,
+      direction,
+    };
 
     alerts.push({
-      item:      it,
-      zone,
-      m,
-      type:      "drift",
-      priority,
-      // Champs directs pour renderAlerts
-      ts:        mZone.ts,
-      biasPct:   mZone.biasPct,
-      varPct:    mZone.varPct,
-      thresh,
-      cum:       mZone.cum,
-      direction,
-      tsFlag:    mZone.tsFlag,
-      biasFlag:  mZone.biasFlag,
-      flag:      true,
-      sWeek:     a.SEMAINE_RECEPTION || "",
-      reception: a.RECEPTION_ID || "",
+      item: it, zone, m: {frozen, slushy, liquid},
+      type: "drift", priority, flag: true,
+      sWeek, reception: receptionId,
     });
   });
 
-  // Ajouter les vides (gaps) calculés localement — pas stockés en BDD
+  // Gaps calculés localement (non stockés en BDD)
   ITEMS.forEach(it => {
     const recs = EDI_DATA[it.id]||[];
     const {current} = getRefPrev(recs);
     const gaps = current ? detectGaps(current) : [];
-    if(gaps.length > 0){
+    if(gaps.length > 0)
       alerts.push({item:it, zone:"gap", gaps, type:"gap", priority:4, flag:true});
-    }
   });
 
   return alerts.sort((a,b) => a.priority - b.priority);
@@ -465,6 +470,7 @@ let S={
 // ── ÉTAT CONNEXION BDD ────────────────────────────────────
 let ALERTS_CACHE = null;
 let ALERTS_DATA = [];  // Alertes chargées depuis la BDD
+let METRICS_DATA = []; // Métriques chargées depuis la BDD
 
 function go(step,extra={}){Object.assign(S,{step,...extra});render();}
 function update(patch){Object.assign(S,patch);render();}
@@ -2038,7 +2044,11 @@ async function loadFromDB() {
     });
     ITEMS.forEach(it => { if (!EDI_DATA[it.id]) EDI_DATA[it.id] = []; });
 
-    // 5. Alertes depuis la BDD
+    // 5. Métriques depuis la BDD
+    const metricsRes = await dbGet({action:"getMetrics"});
+    METRICS_DATA = metricsRes.data || [];
+
+    // 6. Alertes depuis la BDD
     const alertsRes = await dbGet({action:"getAlerts"});
     ALERTS_DATA = alertsRes.data || [];
 
