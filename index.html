@@ -400,6 +400,56 @@ function getAllAlerts(){
   return alerts.sort((a,b)=>a.priority-b.priority);
 }
 
+
+// ── HELPERS BDD ──────────────────────────────────────────
+function getLastMetric(refId){
+  const mets=METRICS_DATA.filter(mx=>String(mx.REF_ID||"").trim()===refId);
+  return mets.length?mets[mets.length-1]:null;
+}
+function hasActiveAlert(refId){
+  return ALERTS_DATA.some(a=>String(a.REF_ID||"").trim()===refId);
+}
+function buildMFromMetric(mx,refId){
+  if(!mx)return null;
+  const cfg=CFG[ITEMS.find(i=>i.id===refId)?.cli||""]||DEFAULT_CFG;
+  const cum=parseFloat(mx.FROZEN_CUM_BIAS)||0;
+  return{
+    frozen:{
+      flag:      mx.FROZEN_FLAG==="TRUE"||mx.FROZEN_FLAG===true||hasActiveAlert(refId),
+      tsFlag:    Math.abs(parseFloat(mx.FROZEN_TS)||0)>(cfg.ts?.frozen||2),
+      biasFlag:  Math.abs(parseFloat(mx.FROZEN_BIAS_PCT)||0)>(cfg.biasDangerPct||25),
+      ts:        parseFloat(mx.FROZEN_TS)||0,
+      biasPct:   parseFloat(mx.FROZEN_BIAS_PCT)||0,
+      mad:       parseFloat(mx.FROZEN_MAD)||0,
+      cum,mean:  parseFloat(mx.FROZEN_MEAN_BIAS)||0,
+      totalForecast:parseFloat(mx.FROZEN_TOTAL_FORECAST)||0,
+      totalCommande:parseFloat(mx.FROZEN_TOTAL_COMMANDE)||0,
+      direction: cum>0?"Sur-programmé":"Sous-programmé",
+      thresh:    cfg.biasDangerPct||25,
+    },
+    slushy:{
+      flag:   mx.SLUSHY_FLAG==="TRUE"||mx.SLUSHY_FLAG===true,
+      danger: mx.SLUSHY_DANGER==="TRUE"||mx.SLUSHY_DANGER===true,
+      varPct: parseFloat(mx.SLUSHY_VAR_PCT)||0,
+      varAbs: parseFloat(mx.SLUSHY_VAR_ABS)||0,
+      sumCurr:parseFloat(mx.SLUSHY_SUM_CURR)||0,
+      sumPrev:parseFloat(mx.SLUSHY_SUM_PREV)||0,
+      warnT:cfg.varWarnSlushy||15,dangerT:cfg.varDangerSlushy||30,
+      direction:parseFloat(mx.SLUSHY_VAR_ABS)>0?"Hausse":"Baisse",
+    },
+    liquid:{
+      flag:   mx.LIQUID_FLAG==="TRUE"||mx.LIQUID_FLAG===true,
+      danger: mx.LIQUID_DANGER==="TRUE"||mx.LIQUID_DANGER===true,
+      varPct: parseFloat(mx.LIQUID_VAR_PCT)||0,
+      varAbs: parseFloat(mx.LIQUID_VAR_ABS)||0,
+      sumCurr:parseFloat(mx.LIQUID_SUM_CURR)||0,
+      sumPrev:parseFloat(mx.LIQUID_SUM_PREV)||0,
+      warnT:cfg.varWarnLiquid||20,dangerT:cfg.varDangerLiquid||40,
+      direction:parseFloat(mx.LIQUID_VAR_ABS)>0?"Hausse":"Baisse",
+    },
+  };
+}
+
 // Hash pour anti-doublon
 function hashEDI(parsed){
   const key=`${parsed.meta.emetteur}|${parsed.meta.date}|${parsed.rows.map(r=>r.REFERENCE+"_"+Object.values(r._qtys||{}).slice(0,3).join(",")).join("|")}`;
@@ -457,11 +507,14 @@ function render(){
     app.innerHTML=renderLogin()+(S.toast&&typeof renderToast==="function"?renderToast():"");
     return;
   }
+  let stepHTML="";
+  try{ stepHTML=renderStep(); }
+  catch(e){ stepHTML=`<div class="card" style="padding:24px;color:#EF4444"><i class="ti ti-alert-circle"></i> Erreur d'affichage : ${e.message}</div>`; }
   app.innerHTML=renderTopBar()+renderStepsBar()+
     `<div class="main">
       ${S.dbError ? renderDBError() : ""}
       ${!DB_CONNECTED && !S.dbError ? renderConnectBanner() : ""}
-      ${renderStep()}
+      ${stepHTML}
     </div>`+
     (S.toast?renderToast():"")+
     renderHelpModal()+
@@ -642,7 +695,8 @@ function renderTopBar(){
   </div>`;
 }
 function renderStepsBar(){
-  const alerts=getAllAlerts();
+  let alerts=[];
+  try{alerts=getAllAlerts();}catch(e){alerts=[];}
   const steps=[
     {id:"home",   icon:"ti-home-2",           label:"Accueil"},
     {id:"import", icon:"ti-upload",            label:"1 · Importer EDI"},
@@ -684,7 +738,7 @@ function renderStep(){
 // ── HOME ─────────────────────────────────────────────────
 function renderHome(){
   const alerts=getAllAlerts();
-  const lastRec=EDI_DATA[ITEMS[0].id];
+  const lastRec=ITEMS.length?EDI_DATA[ITEMS[0].id]:[];
   const {current,currentWeek}=getRefPrev(lastRec)||{};
 
   return`
