@@ -361,21 +361,76 @@ function clientScore(clientId){
 }
 
 function getAllAlerts(){
-  const alerts=[];
-  if(!ITEMS||!ITEMS.length)return alerts;
-  ITEMS.forEach(it=>{
-    const cfg=CFG[it.cli]||DEFAULT_CFG;
-    const recs=EDI_DATA[it.id]||[];
-    const m=calcMetrics(recs,cfg);
-    if(!m)return;
-    const {current}=getRefPrev(recs);
-    if(m.frozen.flag) alerts.push({item:it,zone:"frozen",m,type:"drift",priority:1});
-    if(m.slushy.danger) alerts.push({item:it,zone:"slushy",m,type:"drift",priority:2});
-    if(m.liquid.danger) alerts.push({item:it,zone:"liquid",m,type:"drift",priority:3});
-    const gaps=current?detectGaps(current):[];
-    if(gaps.length>0) alerts.push({item:it,zone:"gap",gaps,type:"gap",priority:4});
+  // Les alertes viennent directement de la BDD (feuille ALERTS)
+  // Mappées vers la structure UI attendue par renderAlerts()
+  if(!ALERTS_DATA||!ALERTS_DATA.length) return [];
+
+  const alerts = [];
+  ALERTS_DATA.forEach(a => {
+    const it = ITEMS.find(i => i.id === String(a.REF_ID||"").trim());
+    if(!it) return;
+
+    const zone = String(a.ZONE||"").toLowerCase();
+    const priority = zone==="frozen"?1:zone==="slushy"?2:zone==="liquid"?3:4;
+
+    // Reconstruire les métriques minimales pour l'affichage
+    const value   = parseFloat(a.VALUE)  || 0;
+    const thresh  = parseFloat(a.THRESHOLD) || 0;
+    const direction = a.DIRECTION || "";
+    const metricType = a.METRIC_TYPE || "";
+
+    // Structure m compatible avec renderAlerts
+    const mZone = {
+      flag:      true,
+      tsFlag:    metricType === "TRACKING_SIGNAL",
+      biasFlag:  metricType === "BIAS_PCT",
+      ts:        metricType === "TRACKING_SIGNAL" ? value : "—",
+      biasPct:   metricType === "BIAS_PCT"        ? value : "—",
+      varPct:    metricType === "VAR_PCT"         ? value : "—",
+      thresh,
+      cum:       metricType === "BIAS_PCT" ? Math.round(value * 10) : value,
+      direction,
+      totalForecast: "—",
+      totalCommande: "—",
+    };
+
+    const m = {frozen:{flag:false,biasPct:0,ts:0},
+               slushy:{flag:false,varPct:0},
+               liquid:{flag:false,varPct:0}};
+    m[zone] = mZone;
+
+    alerts.push({
+      item:      it,
+      zone,
+      m,
+      type:      "drift",
+      priority,
+      // Champs directs pour renderAlerts
+      ts:        mZone.ts,
+      biasPct:   mZone.biasPct,
+      varPct:    mZone.varPct,
+      thresh,
+      cum:       mZone.cum,
+      direction,
+      tsFlag:    mZone.tsFlag,
+      biasFlag:  mZone.biasFlag,
+      flag:      true,
+      sWeek:     a.SEMAINE_RECEPTION || "",
+      reception: a.RECEPTION_ID || "",
+    });
   });
-  return alerts.sort((a,b)=>a.priority-b.priority);
+
+  // Ajouter les vides (gaps) calculés localement — pas stockés en BDD
+  ITEMS.forEach(it => {
+    const recs = EDI_DATA[it.id]||[];
+    const {current} = getRefPrev(recs);
+    const gaps = current ? detectGaps(current) : [];
+    if(gaps.length > 0){
+      alerts.push({item:it, zone:"gap", gaps, type:"gap", priority:4, flag:true});
+    }
+  });
+
+  return alerts.sort((a,b) => a.priority - b.priority);
 }
 
 // Hash pour anti-doublon
@@ -409,6 +464,7 @@ let S={
 
 // ── ÉTAT CONNEXION BDD ────────────────────────────────────
 let ALERTS_CACHE = null;
+let ALERTS_DATA = [];  // Alertes chargées depuis la BDD
 
 function go(step,extra={}){Object.assign(S,{step,...extra});render();}
 function update(patch){Object.assign(S,patch);render();}
@@ -1982,6 +2038,10 @@ async function loadFromDB() {
     });
     ITEMS.forEach(it => { if (!EDI_DATA[it.id]) EDI_DATA[it.id] = []; });
 
+    // 5. Alertes depuis la BDD
+    const alertsRes = await dbGet({action:"getAlerts"});
+    ALERTS_DATA = alertsRes.data || [];
+
     if (!S.selectedItem  && ITEMS.length)   S.selectedItem   = ITEMS[0].id;
     if (!S.selectedClient && CLIENTS.length) S.selectedClient = CLIENTS[0].id;
 
@@ -2045,7 +2105,7 @@ async function importToDB(parsedFiles) {
   if (errors.length) showToast("Erreur: " + errors[0], "ti-alert-triangle", 5000);
   else showToast(`${totalImported} référence(s) importée(s)`, "ti-circle-check");
 
-  await loadFromDB();
+  await loadFromDB();  // recharge aussi ALERTS_DATA
   S.importResult = true;
   S.importedFiles = [];
   go("verify");
