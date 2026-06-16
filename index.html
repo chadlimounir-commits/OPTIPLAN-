@@ -368,7 +368,6 @@ function getAllAlerts(){
     const recs=EDI_DATA[it.id]||[];
     const m=calcMetrics(recs,cfg);
     if(!m)return;
-    const recs=EDI_DATA[it.id];
     const {current}=getRefPrev(recs);
     if(m.frozen.flag) alerts.push({item:it,zone:"frozen",m,type:"drift",priority:1});
     if(m.slushy.danger) alerts.push({item:it,zone:"slushy",m,type:"drift",priority:2});
@@ -1918,7 +1917,7 @@ function attachEvents(){
 // Tout en GET (no CORS depuis GitHub Pages)
 // ════════════════════════════════════════════════════════════
 
-const DB_URL_DEFAULT = "https://script.google.com/macros/s/AKfycbwofZE_NaRemL-D14TPsT5f1pj96Sk9JJqGYZXi6WbxGYo8X0yzUIG9AC9uKXSBeXH7Lw/exec";
+const DB_URL_DEFAULT = "https://script.google.com/macros/s/AKfycbzyNccRuaVltsduqHpnIWX5vqHLOhXaXPY7AdtA7ym_stNv-pDizJyKqCFhW8gtQJyJNQ/exec";
 let DB_URL = localStorage.getItem("optiplan_db_url") || DB_URL_DEFAULT;
 let DB_CONNECTED = false;
 let DB_LOADING   = false;
