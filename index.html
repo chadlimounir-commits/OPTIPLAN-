@@ -17,8 +17,8 @@ input,select,textarea{font-family:inherit}
 .logo-accent{font-weight:300;color:#00A8E8;letter-spacing:2px}
 .topbar-sep{width:1px;height:24px;background:#ffffff22}
 .topbar-right{margin-left:auto;display:flex;gap:8px;align-items:center}
-.gs-dot{width:8px;height:8px;border-radius:50%;background:#EF4444;flex-shrink:0}
-.gs-dot.connected{background:#10B981}
+.db-dot{width:8px;height:8px;border-radius:50%;background:#EF4444;flex-shrink:0}
+.db-dot.connected{background:#10B981}
 
 /* ── WORKFLOW STEPS ── */
 .steps-bar{background:#fff;border-bottom:1px solid #E2E8F0;padding:0 20px;display:flex;align-items:center;gap:0;overflow-x:auto}
@@ -167,13 +167,13 @@ input,select,textarea{font-family:inherit}
 <script>
 // ════════════════════════════════════════════════════════════
 // OPTIPLAN — Demand Governance v0.5
-// Frontend connecté Google Apps Script (tout en GET, no CORS)
+// Frontend connecté base de données OPTIPLAN via API
 // EGBS © 2024
 // ════════════════════════════════════════════════════════════
 
-// ── GAS CONFIG ────────────────────────────────────────────
+// ── DB CONFIG ─────────────────────────────────────────────
 // URL câblée — peut être surchargée via le panneau Config
-const GAS_URL_DEFAULT = "https://script.google.com/macros/s/AKfycbwZGbBc9YQPx568MoOy8sUH4eYCRshkQeGei1rWOtor-HHeYpf93EQbev3gNGC3F7n5MA/exec";
+const GAS_URL_DEFAULT = "https://script.google.com/macros/s/AKfycbwofZE_NaRemL-D14TPsT5f1pj96Sk9JJqGYZXi6WbxGYo8X0yzUIG9AC9uKXSBeXH7Lw/exec";
 
 // ── CONSTANTS ──────────────────────────────────────────────
 const C={
@@ -191,7 +191,7 @@ let GAS_URL = localStorage.getItem("optiplan_gas_url") || GAS_URL_DEFAULT;
 let GS_CONNECTED = false;
 let GS_LOADING = false;
 
-// Données chargées depuis GAS
+// Données chargées depuis la base de données
 let CLIENTS = [];
 let ITEMS   = [];
 let EDI_DATA= {};  // { refId: [{id, date, qtys:{S1..S12}}, ...] }
@@ -213,11 +213,11 @@ let S={
   gasError:null,
 };
 
-// ── GAS API — TOUT EN GET ─────────────────────────────────
-// Le GAS Apps Script interprète les paramètres via e.parameter
+// ── DB API ───────────────────────────────────────────────
+// L'API OPTIPLAN interprète les paramètres via les query params
 // Pour les payloads lourds (importEDI), on encode en JSON dans ?data=
-// Le GAS doit lire : action=importEDI&data=<json_encodé>
-// Voir la version GAS ci-dessous pour les modifications correspondantes
+// L'API doit recevoir : action=importEDI&data=<json_encodé>
+
 
 async function gasGet(params){
   const url=new URL(GAS_URL);
@@ -252,7 +252,7 @@ async function loadFromGAS(){
     ITEMS=itemsRes.data.map(i=>({
       id:i.id,label:i.label,cli:i.cli,bucket:i.bucket,
       famille:i.famille,lt:i.lt,
-      pn:i.id, // pas de PN client dans le GAS, on utilise l'id
+      pn:i.id, // pas de PN client dans la BDD, on utilise l'id
     }));
     SS={};
     itemsRes.data.forEach(i=>{SS[i.id]={ss:i.ss_actuel,uom:i.uom};});
@@ -275,7 +275,7 @@ async function loadFromGAS(){
 
     GS_CONNECTED=true;
     ALERTS_CACHE=null;
-    showToast("Données chargées depuis Google Sheets","ti-cloud-check");
+    showToast("Base de données synchronisée","ti-cloud-check");
   }catch(e){
     S.gasError=e.message;
     GS_CONNECTED=false;
@@ -285,11 +285,11 @@ async function loadFromGAS(){
   }
 }
 
-// ── IMPORT EDI VERS GAS ───────────────────────────────────
+// ── IMPORT EDI ────────────────────────────────────────────
 // On envoie via GET avec data= encodé en JSON
-// Le GAS.doGet reçoit action=importEDI&data={...}
+// L'API reçoit action=importEDI&data={...}
 async function importToGAS(parsedFiles){
-  if(!GS_CONNECTED){showToast("Connectez d'abord Google Sheets","ti-alert-triangle");return;}
+  if(!GS_CONNECTED){showToast("Connectez d'abord la base de données","ti-alert-triangle");return;}
   showLoading("Import en cours...");
   let totalImported=0;
   let errors=[];
@@ -319,7 +319,7 @@ async function importToGAS(parsedFiles){
   }
   hideLoading();
   if(errors.length)showToast("Erreurs: "+errors.slice(0,2).join(" | "),"ti-alert-triangle",5000);
-  else showToast(`${totalImported} référence(s) importée(s) dans Google Sheets`,"ti-circle-check");
+  else showToast(`${totalImported} référence(s) importée(s) dans la base de données`,"ti-circle-check");
   // Recharger les données
   await loadFromGAS();
   S.importResult=true;
@@ -327,14 +327,14 @@ async function importToGAS(parsedFiles){
   go("verify");
 }
 
-// ── IMPORT MASTER SS VERS GAS ─────────────────────────────
-async function importMasterToGAS(masterData){
-  if(!GS_CONNECTED){showToast("Connectez d'abord Google Sheets","ti-alert-triangle");return;}
+// ── IMPORT MASTER SS ──────────────────────────────────────
+async function importMasterToDB(masterData){
+  if(!GS_CONNECTED){showToast("Connectez d'abord la base de données","ti-alert-triangle");return;}
   showLoading("Mise à jour SS...");
   const rows=Object.entries(masterData).map(([ref,v])=>({ref,ss_actuel:v.ss,uom:v.uom||"PCS"}));
   try{
     await gasGet({action:"importMaster",data:JSON.stringify(rows)});
-    showToast(`${rows.length} SS mis à jour dans Google Sheets`,"ti-circle-check");
+    showToast(`${rows.length} SS mis à jour dans la base de données`,"ti-circle-check");
     await loadFromGAS();
   }catch(e){
     showToast("Erreur importMaster: "+e.message,"ti-alert-triangle");
@@ -500,11 +500,11 @@ function renderGASError(){
   return`<div style="background:#FEE2E2;border:1px solid #FCA5A5;border-radius:10px;padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px">
     <i class="ti ti-alert-circle" style="color:#EF4444;font-size:20px;flex-shrink:0"></i>
     <div>
-      <div style="font-weight:700;color:#991B1B;font-size:13px">Erreur de connexion Google Sheets</div>
+      <div style="font-weight:700;color:#991B1B;font-size:13px">Erreur de connexion à la base de données</div>
       <div style="font-size:12px;color:#7F1D1D;margin-top:2px">${S.gasError}</div>
     </div>
     <button class="btn btn-danger btn-sm" style="margin-left:auto" onclick="loadFromGAS()">Réessayer</button>
-    <button class="btn btn-ghost btn-sm" onclick="update({showConfig:true,gasError:null})">Modifier l'URL</button>
+    <button class="btn btn-ghost btn-sm" onclick="update({showConfig:true,gasError:null})">Paramètres de connexion</button>
   </div>`;
 }
 
@@ -512,11 +512,11 @@ function renderConnectBanner(){
   return`<div style="background:#EFF9FF;border:1px solid #BAE6FD;border-radius:10px;padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px">
     <i class="ti ti-database-off" style="color:#0284C7;font-size:24px;flex-shrink:0"></i>
     <div>
-      <div style="font-weight:700;color:#0B1F3A;font-size:13px">Connecter Google Sheets</div>
-      <div style="font-size:12px;color:#0369A1;margin-top:2px">Cliquez sur Connecter GS pour charger les données depuis votre Google Sheet OPTIPLAN</div>
+      <div style="font-weight:700;color:#0B1F3A;font-size:13px">Connexion base de données</div>
+      <div style="font-size:12px;color:#0369A1;margin-top:2px">Cliquez sur Connexion BDD pour charger les données depuis la base de données OPTIPLAN</div>
     </div>
     <button class="btn btn-accent" style="margin-left:auto;flex-shrink:0" onclick="loadFromGAS()">
-      <i class="ti ti-plug-connected"></i> Connecter GS
+      <i class="ti ti-plug-connected"></i> Connexion BDD
     </button>
     <button class="btn btn-ghost btn-sm" onclick="update({showConfig:true})">
       <i class="ti ti-settings"></i> Modifier URL
@@ -532,12 +532,12 @@ function renderTopBar(){
     <span style="color:#94a3b8;font-size:12px">Demand Governance · Module 1</span>
     <div class="topbar-right">
       <div class="flex gap-4" style="gap:6px">
-        <div class="gs-dot${GS_CONNECTED?" connected":""}"></div>
+        <div class="db-dot${GS_CONNECTED?" connected":""}"></div>
         <span style="font-size:11px;color:${GS_CONNECTED?"#10B981":"#EF4444"};font-weight:600">
-          ${GS_CONNECTED?"Google Sheets connecté":"Non connecté"}
+          ${GS_CONNECTED?"Base de données connectée":"Base de données non connectée"}
         </span>
       </div>
-      <button class="topbar-btn" onclick="loadFromGAS()" title="Rafraîchir depuis GS" ${GS_LOADING?"disabled":""}>
+      <button class="topbar-btn" onclick="loadFromGAS()" title="Synchroniser la base de données" ${GS_LOADING?"disabled":""}>
         <i class="ti ti-refresh${GS_LOADING?" ti-spin":""}"></i>
         ${GS_LOADING?"Chargement...":"Synchroniser"}
       </button>
@@ -589,10 +589,10 @@ function renderHome(){
       <i class="ti ti-cloud-off" style="font-size:56px;color:#CBD5E1;display:block;margin-bottom:16px"></i>
       <div style="font-size:20px;font-weight:800;color:#1E293B;margin-bottom:8px">Bienvenue sur OPTIPLAN</div>
       <div style="font-size:14px;color:#64748B;margin-bottom:24px;max-width:400px;margin-left:auto;margin-right:auto">
-        Connectez votre Google Sheet OPTIPLAN pour accéder aux programmes EDI et calculer les métriques en temps réel.
+        Connectez la base de données OPTIPLAN pour accéder aux programmes EDI et calculer les métriques en temps réel.
       </div>
       <button class="btn btn-accent btn-lg" onclick="loadFromGAS()">
-        <i class="ti ti-plug-connected"></i> Connecter Google Sheets
+        <i class="ti ti-database"></i> Connexion BDD
       </button>
     </div>`;
   }
@@ -614,7 +614,7 @@ function renderHome(){
         <div style="font-size:13px;color:#94a3b8">
           Dernier programme : <strong style="color:#00A8E8">${lastId}</strong> · ${lastDate||"—"}
           <span style="margin-left:12px;background:#10B98133;color:#10B981;padding:2px 8px;border-radius:4px;font-size:11px">
-            <i class="ti ti-circle-check"></i> Google Sheets connecté
+            <i class="ti ti-circle-check"></i> Base de données connectée
           </span>
         </div>
       </div>
@@ -761,7 +761,7 @@ REFERENCE;DESIGNATION;CLIENT_CODE;CLIENT_LABEL;BUCKET;UOM;ZONE_S1_S2;ZONE_S3_S5;
 7700432156;Support Berceau Moteur AV;RNT;Renault T1;SEMAINE;PCS;FROZEN;SLUSHY;LIQUID;820;840;...</pre>
         <div style="margin-top:10px;font-size:11px;color:#64748B">
           <i class="ti ti-info-circle" style="margin-right:4px;color:${C.accent}"></i>
-          Les références doivent exister dans Google Sheets (feuille ITEMS)
+          Les références doivent exister dans la base de données OPTIPLAN
         </div>
       </div>
 
@@ -769,10 +769,10 @@ REFERENCE;DESIGNATION;CLIENT_CODE;CLIENT_LABEL;BUCKET;UOM;ZONE_S1_S2;ZONE_S3_S5;
 
       <div id="importActionBtn" style="display:none">
         <button class="btn btn-accent btn-lg" style="width:100%;margin-bottom:8px" onclick="doImport()" ${!GS_CONNECTED?"disabled":""}>
-          <i class="ti ti-database-import"></i> ${GS_CONNECTED?"Importer dans Google Sheets":"Connectez d'abord Google Sheets"}
+          <i class="ti ti-database-import"></i> ${GS_CONNECTED?"Importer dans la base de données":"Connectez d'abord la base de données"}
         </button>
         ${!GS_CONNECTED?`<div style="font-size:11px;color:#EF4444;text-align:center">
-          <i class="ti ti-alert-triangle"></i> Connexion GS requise pour sauvegarder les données
+          <i class="ti ti-alert-triangle"></i> Connexion BDD requise pour sauvegarder les données
         </div>`:""}
       </div>
 
@@ -805,7 +805,7 @@ function renderVerify(){
     <div class="flex-between mb-16">
       <div>
         <div class="card-title">Rapport de réception — ${new Date().toLocaleDateString("fr-FR")}</div>
-        <div class="card-sub">Vérification automatique · Données depuis Google Sheets</div>
+        <div class="card-sub">Vérification automatique · Données depuis la base de données</div>
       </div>
       <button class="btn btn-ghost btn-sm" onclick="go('alerts')">Voir les alertes →</button>
     </div>
@@ -825,7 +825,7 @@ function renderVerify(){
 
   <div class="card">
     <div class="card-title mb-16">Détail par référence — Programme reçu vs t-1</div>
-    ${!ITEMS.length?`<div style="text-align:center;padding:24px;color:#94A3B8">Aucune référence dans Google Sheets. Exécutez setupSheets() dans l'éditeur Apps Script.</div>`:`
+    ${!ITEMS.length?`<div style="text-align:center;padding:24px;color:#94A3B8">Aucune référence dans la base de données. Initialisez la structure via l'administration.</div>`:`
     <table class="tbl">
       <thead><tr>
         <th>Référence</th><th>Désignation</th><th>Client T1</th>
@@ -971,7 +971,7 @@ function renderAlerts(){
 // ── STEP 4: ANALYSE ───────────────────────────────────────
 function renderAnalyse(){
   if(!GS_CONNECTED)return renderNotConnected();
-  if(!ITEMS.length)return`<div class="card" style="text-align:center;padding:40px;color:#94A3B8">Aucune référence chargée depuis Google Sheets.</div>`;
+  if(!ITEMS.length)return`<div class="card" style="text-align:center;padding:40px;color:#94A3B8">Aucune référence chargée depuis la base de données.</div>`;
 
   const it=ITEMS.find(i=>i.id===S.selectedItem)||ITEMS[0];
   const cfg=CFG[it.cli]||DEFAULT_CFG;
@@ -1358,7 +1358,7 @@ function renderShare(){
         <button class="btn btn-primary btn-lg" style="width:100%" onclick="showEmailModal()">
           <i class="ti ti-mail-forward"></i> Envoyer par email (mailto)
         </button>
-        <button class="btn btn-ghost btn-lg" style="width:100%" onclick="window.print()">
+        <button class="btn btn-ghost btn-lg" style="width:100%" onclick="printReport()">
           <i class="ti ti-printer"></i> Imprimer / PDF
         </button>
         <button class="btn btn-ghost btn-lg" style="width:100%" onclick="exportCSV()">
@@ -1373,10 +1373,10 @@ function renderShare(){
 function renderNotConnected(){
   return`<div class="card" style="text-align:center;padding:48px 40px">
     <i class="ti ti-plug-x" style="font-size:48px;color:#CBD5E1;display:block;margin-bottom:12px"></i>
-    <div style="font-size:16px;font-weight:700;margin-bottom:8px">Connexion Google Sheets requise</div>
-    <div class="text-sm text-muted mb-16">Cliquez sur "Connecter GS" pour charger les données</div>
+    <div style="font-size:16px;font-weight:700;margin-bottom:8px">Connexion base de données requise</div>
+    <div class="text-sm text-muted mb-16">Cliquez sur "Connexion BDD" pour charger les données</div>
     <button class="btn btn-accent" onclick="loadFromGAS()">
-      <i class="ti ti-plug-connected"></i> Connecter Google Sheets
+      <i class="ti ti-database"></i> Connexion BDD
     </button>
   </div>`;
 }
@@ -1389,32 +1389,32 @@ function renderConfigModal(){
       <div class="flex-between mb-16">
         <div>
           <div class="modal-title"><i class="ti ti-settings" style="color:${C.accent};margin-right:6px"></i>Configuration OPTIPLAN</div>
-          <div class="modal-sub">Connexion Google Sheets · Paramètres BDD</div>
+          <div class="modal-sub">Connexion · Paramètres base de données</div>
         </div>
         <button onclick="update({showConfig:false})" style="background:none;border:none;font-size:20px;cursor:pointer;color:#64748B">×</button>
       </div>
 
       <div style="margin-bottom:16px">
-        <label style="font-size:11px;font-weight:700;color:#64748B;display:block;margin-bottom:6px">URL Google Apps Script</label>
+        <label style="font-size:11px;font-weight:700;color:#64748B;display:block;margin-bottom:6px">URL de connexion OPTIPLAN</label>
         <input id="gasUrlInput" type="text" value="${GAS_URL}"
           style="width:100%;padding:10px 12px;border:1px solid #E2E8F0;border-radius:8px;font-size:12px;font-family:monospace;outline:none;color:#1E293B"
           placeholder="https://script.google.com/macros/s/...">
         <div style="font-size:10px;color:#94A3B8;margin-top:4px">
-          Extensions > Apps Script > Déployer > Application Web > Copier l'URL
+          Renseignez l'URL fournie par votre administrateur OPTIPLAN
         </div>
       </div>
 
       <div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:12px;color:#92400E">
-        <strong>⚠ Important :</strong> Le GAS doit être déployé avec accès "Toute personne" pour fonctionner depuis GitHub Pages.
-        Après modification, cliquez Tester la connexion.
+        <strong>ℹ Information :</strong> Renseignez l'URL de connexion fournie par votre administrateur système OPTIPLAN.
+        Après modification, cliquez Se connecter.
       </div>
 
       <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:12px">
-        <div style="font-weight:700;margin-bottom:6px">Statut actuel</div>
+        <div style="font-weight:700;margin-bottom:6px">Statut de la connexion</div>
         <div class="flex gap-8">
-          <div class="gs-dot${GS_CONNECTED?" connected":""}"></div>
+          <div class="db-dot${GS_CONNECTED?" connected":""}"></div>
           <span style="color:${GS_CONNECTED?"#10B981":"#EF4444"};font-weight:600">
-            ${GS_CONNECTED?"Connecté — données chargées":"Non connecté"}
+            ${GS_CONNECTED?"Connectée — données chargées":"Base de données non connectée"}
           </span>
         </div>
         ${GS_CONNECTED?`<div style="margin-top:6px;color:#64748B">
@@ -1425,9 +1425,9 @@ function renderConfigModal(){
       <div class="flex-between">
         <button onclick="update({showConfig:false})" class="btn btn-ghost">Fermer</button>
         <div class="flex gap-8">
-          <button onclick="resetGASUrl()" class="btn btn-ghost btn-sm">Remettre l'URL par défaut</button>
+          <button onclick="resetGASUrl()" class="btn btn-ghost btn-sm">URL par défaut</button>
           <button onclick="saveAndConnect()" class="btn btn-accent">
-            <i class="ti ti-plug-connected"></i> Tester la connexion
+            <i class="ti ti-plug-connected"></i> Se connecter
           </button>
         </div>
       </div>
@@ -1597,20 +1597,20 @@ function handleMasterFile(file){
     const el=document.getElementById("masterStatus");
     if(el)el.innerHTML=`<div class="flex" style="gap:10px;margin-top:8px">
       <div class="badge badge-ok" style="padding:6px 10px"><i class="ti ti-circle-check" style="margin-right:4px"></i>${count} articles prêts</div>
-      ${GS_CONNECTED?`<button class="btn btn-success btn-sm" onclick="importMasterToGAS(${JSON.stringify(data).replace(/"/g,'&quot;')})">
-        <i class="ti ti-cloud-upload"></i> Envoyer dans Google Sheets
-      </button>`:`<span class="text-sm text-muted">Connectez GS pour synchroniser</span>`}
+      ${GS_CONNECTED?`<button class="btn btn-success btn-sm" onclick="importMasterToDB(${JSON.stringify(data).replace(/"/g,'&quot;')})">
+        <i class="ti ti-cloud-upload"></i> Enregistrer dans la base de données
+      </button>`:`<span class="text-sm text-muted">Connectez la BDD pour synchroniser</span>`}
     </div>`;
     showToast(`${count} SS actuel parsés`,"ti-package");
     // Si connecté, proposer l'import immédiat
-    if(GS_CONNECTED)importMasterToGAS(data);
+    if(GS_CONNECTED)importMasterToDB(data);
   };
   r.readAsText(file,"utf-8");
 }
 
 async function doImport(){
   if(!S.importedFiles.length){showToast("Aucun fichier à importer","ti-alert-triangle");return;}
-  if(!GS_CONNECTED){showToast("Connectez d'abord Google Sheets","ti-alert-triangle");return;}
+  if(!GS_CONNECTED){showToast("Connectez d'abord la base de données","ti-alert-triangle");return;}
   await importToGAS(S.importedFiles);
   const btn=document.getElementById("importActionBtn");
   if(btn)btn.style.display="none";
@@ -1714,6 +1714,140 @@ function attachEvents(){
     dm.addEventListener("drop",e=>{e.preventDefault();dm.classList.remove("drag");handleMasterFile(e.dataTransfer.files[0]);});
   }
   if(fm)fm.addEventListener("change",e=>handleMasterFile(e.target.files[0]));
+}
+
+// ── PRINT ────────────────────────────────────────────────
+function printReport(){
+  const alerts=getAllAlerts();
+  const date=new Date().toLocaleDateString("fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
+
+  // Construire le tableau des métriques par référence
+  const tableRows=ITEMS.map(it=>{
+    const cfg=CFG[it.cli]||DEFAULT_CFG;
+    const m=calcMetrics(EDI_DATA[it.id],cfg);
+    const cl=CLIENTS.find(c=>c.id===it.cli)||{label:it.cli};
+    const recs=EDI_DATA[it.id]||[];
+    const lastRec=recs[recs.length-1];
+    const lastId=lastRec?lastRec.id:"—";
+    if(!m)return`<tr>
+      <td>${it.id}</td><td>${it.label}</td><td>${cl.label}</td>
+      <td colspan="6" style="color:#94A3B8;font-style:italic">Moins de 2 réceptions</td>
+    </tr>`;
+    const flag=Object.values(m).some(v=>v.flag);
+    return`<tr style="background:${flag?"#FFF5F5":"#fff"}">
+      <td><strong>${it.id}</strong></td>
+      <td>${it.label}</td>
+      <td>${cl.label}</td>
+      <td style="color:${m.frozen.flag?"#EF4444":"#10B981"}">${m.frozen.biasPct>0?"+":""}${m.frozen.biasPct}%</td>
+      <td style="color:${m.frozen.tsFlag?"#EF4444":"#10B981"}">${m.frozen.ts} /±${m.frozen.thresh}</td>
+      <td style="color:${m.slushy.flag?"#EF4444":"#10B981"}">${m.slushy.biasPct>0?"+":""}${m.slushy.biasPct}%</td>
+      <td style="color:${m.liquid.flag?"#EF4444":"#10B981"}">${m.liquid.biasPct>0?"+":""}${m.liquid.biasPct}%</td>
+      <td>${lastId}</td>
+      <td style="font-weight:700;color:${flag?"#EF4444":"#10B981"}">${flag?"⚠ ALERTE":"✓ OK"}</td>
+    </tr>`;
+  }).join("");
+
+  // Construire les alertes
+  const alertRows=alerts.length===0
+    ?`<p style="color:#10B981;font-weight:600">✓ Aucune alerte — tous les programmes sont stables.</p>`
+    :alerts.map(a=>`<div style="border-left:4px solid ${a.zone==="frozen"?"#EF4444":a.zone==="slushy"?"#F59E0B":"#00C9B1"};padding:8px 12px;margin-bottom:8px;background:#F8FAFC">
+        <strong>${a.item.id}</strong> — ${a.item.label} &nbsp;|&nbsp;
+        Zone ${a.zone==="frozen"?"Figée":a.zone==="slushy"?"Semi-figée":"Flexible"} &nbsp;|&nbsp;
+        TS: ${a.ts||"—"} /±${a.thresh||"—"} &nbsp;|&nbsp;
+        Biais: ${a.biasPct||"—"}% &nbsp;|&nbsp;
+        <em>${a.direction||""}</em>
+      </div>`).join("");
+
+  // Scores clients
+  const clientScores=CLIENTS.map(cl=>{
+    const score=clientScore(cl.id);
+    return`<div style="display:inline-block;margin-right:24px">
+      <strong>${cl.label}</strong> :
+      <span style="font-size:18px;font-weight:800;color:${score>=85?"#10B981":score>=65?"#F59E0B":"#EF4444"}">${score}/100</span>
+    </div>`;
+  }).join("");
+
+  const html=`<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>OPTIPLAN — Rapport EDI ${new Date().toLocaleDateString("fr-FR")}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter',Arial,sans-serif;font-size:12px;color:#1E293B;padding:24px}
+  h1{font-size:20px;font-weight:900;color:#0B1F3A;margin-bottom:4px}
+  h2{font-size:14px;font-weight:700;color:#0B1F3A;margin:20px 0 10px;border-bottom:2px solid #0B1F3A;padding-bottom:4px}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #E2E8F0}
+  .logo{font-size:22px;font-weight:900;color:#0B1F3A;letter-spacing:-0.5px}
+  .logo span{font-weight:300;color:#00A8E8;letter-spacing:2px}
+  .meta{font-size:11px;color:#64748B;margin-top:4px}
+  .kpis{display:flex;gap:16px;margin-bottom:20px}
+  .kpi{background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:12px 20px;text-align:center;flex:1}
+  .kpi-val{font-size:28px;font-weight:800}
+  .kpi-lbl{font-size:10px;font-weight:700;text-transform:uppercase;color:#64748B;margin-top:2px}
+  table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:16px}
+  th{background:#0B1F3A;color:#fff;padding:7px 10px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px}
+  td{padding:7px 10px;border-bottom:1px solid #F1F5F9;vertical-align:middle}
+  tr:nth-child(even) td{background:#F8FAFC}
+  .footer{margin-top:24px;padding-top:12px;border-top:1px solid #E2E8F0;font-size:10px;color:#94A3B8;display:flex;justify-content:space-between}
+  @media print{
+    body{padding:12px}
+    @page{margin:1.5cm;size:A4 landscape}
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <div>
+    <div class="logo">OPTI<span>PLAN</span></div>
+    <div class="meta">Demand Governance · Module 1 · EGBS Supply Chain</div>
+    <div class="meta" style="margin-top:6px;font-weight:600">${date}</div>
+  </div>
+  <div style="text-align:right">
+    <div style="font-size:11px;color:#64748B">Scores qualité EDI</div>
+    <div style="margin-top:6px">${clientScores}</div>
+  </div>
+</div>
+
+<div class="kpis">
+  ${[
+    {l:"Références analysées",v:ITEMS.length,c:"#1A4A8A"},
+    {l:"Alertes actives",v:alerts.length,c:alerts.length>0?"#EF4444":"#10B981"},
+    {l:"Dérives détectées",v:alerts.filter(a=>a.type==="drift").length,c:alerts.filter(a=>a.type==="drift").length>0?"#EF4444":"#10B981"},
+    {l:"Programmes incomplets",v:alerts.filter(a=>a.type==="gap").length,c:alerts.filter(a=>a.type==="gap").length>0?"#F59E0B":"#10B981"},
+  ].map(k=>`<div class="kpi">
+    <div class="kpi-val" style="color:${k.c}">${k.v}</div>
+    <div class="kpi-lbl">${k.l}</div>
+  </div>`).join("")}
+</div>
+
+<h2>Alertes prioritaires</h2>
+${alertRows}
+
+<h2>Détail par référence — Biais & Tracking Signal</h2>
+<table>
+  <thead><tr>
+    <th>Référence</th><th>Désignation</th><th>Client T1</th>
+    <th>Biais Figé</th><th>TS Figé</th>
+    <th>Biais Semi-figé</th><th>Biais Flexible</th>
+    <th>Dernière réc.</th><th>Statut</th>
+  </tr></thead>
+  <tbody>${tableRows}</tbody>
+</table>
+
+<div class="footer">
+  <span>OPTIPLAN — Demand Governance v0.5 · EGBS © 2024</span>
+  <span>Généré le ${new Date().toLocaleString("fr-FR")}</span>
+</div>
+
+<script>window.onload=function(){window.print();}<\/script>
+</body>
+</html>`;
+
+  const w=window.open("","_blank","width=1100,height=800");
+  if(!w){showToast("Autorisez les popups pour imprimer","ti-alert-triangle",4000);return;}
+  w.document.write(html);
+  w.document.close();
 }
 
 // ── INIT ─────────────────────────────────────────────────
